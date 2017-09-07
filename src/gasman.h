@@ -887,6 +887,13 @@ extern  Bag *                   AllocBags;
 #define FORGET_WP(loc) \
 	GC_unregister_disappearing_link((void **)(loc))
 
+#else
+
+#define IS_WEAK_DEAD_BAG(bag) (0)
+
+#define REGISTER_WP(loc, obj) ((void) 0)
+#define FORGET_WP(loc) ((void) 0)
+
 #endif
              
 /****************************************************************************

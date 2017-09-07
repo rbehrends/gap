@@ -201,7 +201,7 @@ dnl
 dnl User setting: garbage collector to use
 dnl
 AC_ARG_WITH([gc],
-    [AS_HELP_STRING([--with-gc@<:@=default|gasman|boehm@:>@],
+    [AS_HELP_STRING([--with-gc@<:@=default|gasman|boehm|julia|testbed@:>@],
       [specify which garbage collector to use (default: gasman; for HPC-GAP: boehm)])],
     [],
     [with_gc=default])
@@ -223,7 +223,13 @@ AS_CASE([$with_gc],
                  AC_SUBST([GC_SOURCES], [src/gasman.c])
                  AC_DEFINE([USE_GASMAN],    [1], [define as 1 if GASMAN is used])
                 ],
-    [*],        [AC_MSG_ERROR([Invalid gc method '$with_gc', use default|none|gasman|boehm])],
+    [julia],    [AC_SUBST([GC_SOURCES], [src/julia_gc.c])
+                 AC_DEFINE([USE_JULIA_GC],  [1], [define as 1 if the Julia GC is used])
+                ],
+    [testbed],  [AC_SUBST([GC_SOURCES], [src/alt_gc.c])
+                 AC_DEFINE([USE_TESTBED_GC],  [1], [define as 1 if the GC testbed is being used])
+                ],
+    [*],        [AC_MSG_ERROR([Invalid gc method '$with_gc', use default|none|gasman|boehm|julia|testbed])],
     )
 AC_MSG_RESULT([$with_gc])
 

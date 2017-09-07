@@ -114,31 +114,34 @@ UInt CollectBags (
     return 1;
 }
 
-#if 0
-void RetypeBagIfWritable( Obj obj, UInt new_type )
-{
-  if (CheckWriteAccess(obj))
-    RetypeBag(obj, new_type);
-}
-#endif
-
 void            RetypeBag (
     Bag                 bag,
     UInt                new_type )
 {
-    BagHeader   *header = BAG_HEADER(bag);
+    BagHeader * header = BAG_HEADER(bag);
 
-    /* change the size-type word                                           */
+#ifdef COUNT_BAGS
+    /* update the statistics      */
+    {
+          UInt                old_type;       /* old type of the bag */
+          UInt                size;
+
+          old_type = header->type;
+          size = header->size;
+          InfoBags[old_type].nrLive   -= 1;
+          InfoBags[new_type].nrLive   += 1;
+          InfoBags[old_type].nrAll    -= 1;
+          InfoBags[new_type].nrAll    += 1;
+          InfoBags[old_type].sizeLive -= size;
+          InfoBags[new_type].sizeLive += size;
+          InfoBags[old_type].sizeAll  -= size;
+          InfoBags[new_type].sizeAll  += size;
+    }
+#endif
+
     header->type = new_type;
-    UInt size;
-    void *new_mem, *old_mem;
-    size = SIZE_BAG(bag) + sizeof(BagHeader);
-    new_mem = AllocateBagMemory(new_type, size);
-    old_mem = PTR_BAG(bag);
-    old_mem = ((char *) old_mem) - sizeof(BagHeader);
-    memcpy(new_mem, old_mem, size);
-    SET_PTR_BAG(bag, (void *)(((char *)new_mem) + sizeof(BagHeader)));
 }
+
 
 Bag NewBag (
     UInt                type,

@@ -178,7 +178,7 @@ typedef struct GAPState {
     UInt SC_MAX_STACK_SIZE;
 
 /* Allocation */
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 #define MAX_GC_PREFIX_DESC 4
     void ** FreeList[MAX_GC_PREFIX_DESC + 2];
 #endif

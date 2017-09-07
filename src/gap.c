@@ -1772,7 +1772,7 @@ again:
                "you can replace <cmd> via 'return <cmd>;'" );
        }
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
         if ( strcmp( CSTR_STRING(cmd), "collect" ) == 0 ) {
             CollectBags(0,1);
         }
@@ -1783,7 +1783,7 @@ again:
             goto again;
         }
 
-#else // BOEHM_GC
+#else // ALT_GC
 
         /* if request display the statistics                               */
         if ( strcmp( CSTR_STRING(cmd), "display" ) == 0 ) {
@@ -1880,7 +1880,7 @@ again:
                 "you can replace <cmd> via 'return <cmd>;'" );
             goto again;
         }
-#endif // ! BOEHM_GC
+#endif // ! ALT_GC
     }
 
     /* return nothing, this function is a procedure                        */
@@ -2055,7 +2055,7 @@ HANDLE_OBJ for non-immediate objects */
 
 Obj FuncMASTER_POINTER_NUMBER(Obj self, Obj o)
 {
-#ifdef HPCGAP
+#if defined(HPCGAP) || defined(ALT_GC)
     if (IS_INTOBJ(o) || IS_FFE(o)) {
         return INTOBJ_INT(0);
     }
@@ -3189,7 +3189,7 @@ void RecordLoadedModule (
 **  general    `InitLibrary'  will  create    all objects    and  then  calls
 **  `PostRestore'.  This function is only used when restoring.
 */
-#ifndef BOEHM_GC
+#ifndef ALT_GC
 extern TNumMarkFuncBags TabMarkFuncBags [ 256 ];
 #endif
 
@@ -3212,7 +3212,7 @@ void InitializeGap (
     InitBags( SyAllocBags, SyStorMin,
               0, (Bag*)(((UInt)pargc/SyStackAlign)*SyStackAlign), SyStackAlign,
               SyAbortBags );
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
     InitMsgsFuncBags( SyMsgsBags );
 #endif
 
@@ -3301,7 +3301,7 @@ void InitializeGap (
 #   endif
 #endif
 
-#ifndef BOEHM_GC
+#ifndef ALT_GC
     /* and now for a special hack                                          */
     for ( i = LAST_CONSTANT_TNUM+1; i <= LAST_REAL_TNUM; i++ ) {
       if (TabMarkFuncBags[i + COPYING] == MarkAllSubBagsDefault)
@@ -3343,7 +3343,7 @@ void InitializeGap (
 
     /* otherwise call library initialisation                               */
     else {
-#       if !defined(BOEHM_GC)
+#       if !defined(ALT_GC)
             WarnInitGlobalBag = 1;
 #       endif
 #       ifdef DEBUG_HANDLER_REGISTRATION
@@ -3367,7 +3367,7 @@ void InitializeGap (
                 }
             }
         }
-#if     !defined(BOEHM_GC)
+#if     !defined(ALT_GC)
             WarnInitGlobalBag = 0;
 #       endif
     }

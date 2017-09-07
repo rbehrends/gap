@@ -19,7 +19,7 @@
 #include <src/fibhash.h>
 #include <src/objset.h>
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 # ifdef HPCGAP
 #  define GC_THREADS
 # endif

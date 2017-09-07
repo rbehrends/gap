@@ -88,7 +88,7 @@ typedef struct {
     uint16_t reserved : 16;
     uint32_t size : 32;
 #endif
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
     Bag link;
 #endif
 } BagHeader;
@@ -344,7 +344,7 @@ static inline void SET_PTR_BAG(Bag bag, Bag *val)
 **  have side effects.
 */
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 
 static inline void CHANGED_BAG(Bag bag)
 {
@@ -728,7 +728,7 @@ Bag MakeBagReadOnly(Bag bag);
 **  34+3016 is the  number  of bags allocated  between  the last two  garbage
 **  collections, using 978 KByte and the other two numbers are as above.
 */
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 typedef void            (* TNumMsgsFuncBags) (
             UInt                full,
             UInt                phase,
@@ -828,7 +828,7 @@ extern void MarkAllSubBagsDefault ( Bag );
 **  identifier.
 
 */
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 extern void MarkBag( Bag bag );
 #else
 static inline void MarkBag( Bag bag ) {}
@@ -878,7 +878,7 @@ extern void MarkArrayOfBags( Bag array[], int count );
 *F
 */
 
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 extern  Bag *                   MptrBags;
 extern  Bag *                   OldBags;
@@ -937,7 +937,7 @@ extern  void            InitSweepFuncBags (
 **
 *V  GlobalBags  . . . . . . . . . . . . . . . . . . . . . list of global bags
 */
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 #ifndef NR_GLOBAL_BAGS
 #define NR_GLOBAL_BAGS  20000L
@@ -983,7 +983,7 @@ extern void InitGlobalBag (
             Bag *               addr,
             const Char *        cookie );
 
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 extern Int WarnInitGlobalBag;
 
@@ -1186,7 +1186,7 @@ extern void CallbackForAllBags(
      void (*func)(Bag) );
 
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 void *AllocateMemoryBlock(UInt size);
 #endif
 

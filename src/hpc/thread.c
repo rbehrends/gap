@@ -23,7 +23,7 @@
 #include <sys/mman.h>
 #include <errno.h>
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 # ifdef HPCGAP
 #  define GC_THREADS
 # endif

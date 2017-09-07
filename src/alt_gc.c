@@ -75,7 +75,7 @@ void StandardFinalizer( void * bagContents, void * data )
 **/
 void *AllocateBagMemory(int type, UInt size)
 {
-  // TODO: hook external gc
+  // HOOK: return `size` bytes memory of TNUM `type`.
   return ALLOCATE_BAGMEM(size);
 }
 
@@ -83,14 +83,15 @@ void InitMarkFuncBags (
     UInt                type,
     TNumMarkFuncBags    mark_func )
 {
-  // TODO: hook marker functions
+  // HOOK: set mark function for type `type`.
 }
 
 void InitSweepFuncBags (
     UInt                type,
     TNumSweepFuncBags    mark_func )
 {
-  // TODO: hook marker functions
+  // HOOK: set sweep function for type `type`.
+  // This is intended for weak pointer objects.
 }
 
 void            InitBags (
@@ -101,16 +102,14 @@ void            InitBags (
     UInt                stack_align,
     TNumAbortFuncBags   abort_func )
 {
-    /* install the marking functions                                       */
-    // TODO: initialize marker table
-    // TODO: init GC
+    // HOOK: initialization happens here.
 }
 
 UInt CollectBags (
     UInt                size,
     UInt                full )
 {
-    // TODO: full collection
+    // HOOK: perform a full collection
     return 1;
 }
 
@@ -142,6 +141,10 @@ void            RetypeBag (
     header->type = new_type;
 }
 
+static inline Bag AllocateMasterPointer() {
+  // HOOK: Allocate memory for the master pointer.
+  // Master pointers require one word of memory.
+}
 
 Bag NewBag (
     UInt                type,
@@ -151,7 +154,7 @@ Bag NewBag (
     UInt                alloc_size;
 
     alloc_size = sizeof(BagHeader) + size;
-    bag = ALLOCATE_MPTR(); // TODO: figure out macro
+    bag = AllocateMasterPointer();
 
     SizeAllBags             += size;
 
@@ -269,7 +272,9 @@ UInt ResizeBag (
 void InitGlobalBag (
     Bag *               addr,
     const Char *        cookie )
-{ }
+{
+  // HOOK: Register global root.
+}
 
 void CallbackForAllBags(
      void (*func)(Bag) )
@@ -287,6 +292,8 @@ void SwapMasterPoint( Bag bag1, Bag bag2 )
     SET_PTR_BAG(bag1, ptr2);
     SET_PTR_BAG(bag2, ptr1);
 }
+
+// HOOK: mark functions
 
 void MarkNoSubBags( Bag bag )
 {

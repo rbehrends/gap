@@ -323,6 +323,6 @@ void MarkBagWeakly( Bag bag )
 {
 }
 
-void MarkArrayOfBags( Bag array[], int count )
+void MarkArrayOfBags( const Bag array[], UInt count )
 {
 }

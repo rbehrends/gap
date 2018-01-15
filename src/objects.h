@@ -23,6 +23,7 @@
 
 #ifdef HPCGAP
 #define USE_THREADSAFE_COPYING
+#include <src/hpc/guards.h>
 #endif
 
 
@@ -388,13 +389,26 @@ static inline UInt SIZE_OBJ(Obj obj)
 */
 static inline Obj *ADDR_OBJ(Obj obj)
 {
+    ReadGuard(obj);
     return PTR_BAG(obj);
 }
 
 static inline const Obj *CONST_ADDR_OBJ(Obj obj)
 {
+    ReadGuard(obj);
     return CONST_PTR_BAG(obj);
 }
+
+static inline Obj *UNSAFE_ADDR_OBJ(Obj obj)
+{
+    return PTR_BAG(obj);
+}
+
+static inline const Obj *UNSAFE_CONST_ADDR_OBJ(Obj obj)
+{
+    return CONST_PTR_BAG(obj);
+}
+
 
 
 /****************************************************************************

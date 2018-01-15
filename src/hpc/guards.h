@@ -4,6 +4,19 @@
 #include <src/hpc/region.h>
 #include <src/hpc/tls.h>
 
+/****************************************************************************
+**
+*F  IS_BAG_REF(<bag>) . . . . . . verify that <bag> is a valid bag identifier
+**
+**  'IS_BAG_REF' checks whether <bag> is a valid bag identifier, i.e. that
+**  it is neither zero, nor an immediate object.
+**
+**  See also 'IS_INTOBJ' and 'IS_FFE'.
+*/
+#ifndef IS_BAG_REF
+#define IS_BAG_REF(bag) (bag && !((Int)(bag)& 0x03))
+#endif
+
 #ifndef HPCGAP
 #error This header is only meant to be used with HPC-GAP
 #endif

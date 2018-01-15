@@ -289,6 +289,7 @@ void CreateMainRegion(void)
     ReadOnlyRegion->fixed_owner = 1;
     for (i = 0; i <= MAX_THREADS; i++) {
         ReadOnlyRegion->readers[i] = 1;
+        LimboRegion->readers[i] = 1;
     }
 }
 

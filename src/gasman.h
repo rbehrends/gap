@@ -39,6 +39,10 @@
 #include <src/system.h>
 #include <src/debug.h>
 
+#ifdef HPCGAP
+#include <src/hpc/guards.h>
+#endif
+
 
 /****************************************************************************
 **
@@ -177,7 +181,9 @@ static inline void CLEAR_BAG_FLAG(Bag bag, uint8_t flag)
 **
 **  See also 'IS_INTOBJ' and 'IS_FFE'.
 */
+#ifndef IS_BAG_REF
 #define IS_BAG_REF(bag) (bag && !((Int)(bag)& 0x03))
+#endif
 
 
 /****************************************************************************

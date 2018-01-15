@@ -183,18 +183,53 @@ dnl If on, build an HPCGAP executable instead of standard GAP.
 dnl
 AC_ARG_ENABLE([hpcgap],
     [AS_HELP_STRING([--enable-hpcgap], [enable HPC-GAP])],
-    [AC_DEFINE([HPCGAP], [1], [define if building HPC-GAP])],
-    [enable_hpcgap=no]
-    )
+    [],
+    [enable_hpcgap=no])
 AC_MSG_CHECKING([whether to enable HPC-GAP])
 AC_MSG_RESULT([$enable_hpcgap])
 
 AC_SUBST([HPCGAP], [$enable_hpcgap])
 AS_IF([test "x$enable_hpcgap" = xyes],
     [
-    # HACK (see issue #9)
+    AC_DEFINE([HPCGAP], [1], [define if building HPC-GAP])
+
+    # HACK, see https://github.com/fingolfin/gap/issues/9
     AC_DEFINE([MAX_GC_THREADS], [4], [maximum number of GC threads])
     ])
+
+dnl
+dnl User setting: garbage collector to use
+dnl
+AC_ARG_WITH([gc],
+    [AS_HELP_STRING([--with-gc@<:@=default|gasman|boehm|julia@:>@],
+      [specify which garbage collector to use (default: gasman; for HPC-GAP: boehm)])],
+    [],
+    [with_gc=default])
+AC_MSG_CHECKING([which garbage collector to use])
+AS_IF([test "x$with_gc" = xyes], [with_gc=default])
+AS_IF([test "x$with_gc" = xdefault],
+    [
+    AS_IF([test "x$enable_hpcgap" = xyes], [with_gc=boehm], [with_gc=gasman])
+    ])
+AS_CASE([$with_gc],
+    [none|no],  [AC_MSG_ERROR([cannot run GAP without a garbage collector])],
+    [boehm],    [AS_IF([test "x$enable_hpcgap" = xno],
+                    [AC_MSG_ERROR([Boehm GC can only be used with HPC-GAP])])
+                 AC_SUBST([GC_SOURCES], [src/boehm_gc.c])
+                 AC_DEFINE([BOEHM_GC],  [1], [define as 1 if Boehm GC is used])
+                 AC_DEFINE([ALT_GC],    [1], [Use alternate garbage collector])
+                 ],
+    [gasman],   [AS_IF([test "x$enable_hpcgap" = xyes],
+                    [AC_MSG_ERROR([GASMAN can not be used with HPC-GAP])])
+                 AC_SUBST([GC_SOURCES], [src/gasman.c])
+                 AC_DEFINE([USE_GASMAN],    [1], [define as 1 if GASMAN is used])],
+    [julia],    [AC_SUBST([GC_SOURCES], [src/julia_gc.c])
+                 AC_DEFINE([USE_JULIA_GC],  [1], [define as 1 if Julia's GC is used])
+                 AC_DEFINE([ALT_GC],        [1], [Use alternate garbage collector])
+                 ],
+    [*],        [AC_MSG_ERROR([Invalid gc method '$with_gc', use default|none|gasman|boehm|julia])],
+    )
+AC_MSG_RESULT([$with_gc])
 
 dnl
 dnl User setting: Debug mode (off by default)
@@ -401,9 +436,11 @@ AS_IF([test "x$enable_hpcgap" = xyes],
 
   ATOMIC_OPS_CFLAGS=$LIBATOMIC_OPS_CPPFLAGS
   ATOMIC_OPS_LIBS=$LIBATOMIC_OPS_LDFLAGS
+  ]
+)
 
-  AC_DEFINE([BOEHM_GC], [1], [Use Boehm garbage collector])
-  AC_DEFINE([ALT_GC], [1], [Use alternate garbage collector])
+AS_IF([test "x$with_gc" = xboehm],
+  [
   BUILD_BOEHM_GC=yes
   BOEHM_GC_CPPFLAGS='-I${abs_builddir}/extern/install/gc/include'
   BOEHM_GC_LDFLAGS='${abs_builddir}/extern/install/gc/lib/libgc.la'

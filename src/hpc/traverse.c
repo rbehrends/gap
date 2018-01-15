@@ -13,7 +13,7 @@
 #include <src/hpc/guards.h>
 #include <src/hpc/thread.h>
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 # ifdef HPCGAP
 #  define GC_THREADS
 # endif

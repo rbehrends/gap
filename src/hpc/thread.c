@@ -19,7 +19,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 # ifdef HPCGAP
 #  define GC_THREADS
 # endif

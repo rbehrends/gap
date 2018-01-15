@@ -403,6 +403,7 @@ AS_IF([test "x$enable_hpcgap" = xyes],
   ATOMIC_OPS_LIBS=$LIBATOMIC_OPS_LDFLAGS
 
   AC_DEFINE([BOEHM_GC], [1], [Use Boehm garbage collector])
+  AC_DEFINE([ALT_GC], [1], [Use alternate garbage collector])
   BUILD_BOEHM_GC=yes
   BOEHM_GC_CPPFLAGS='-I${abs_builddir}/extern/install/gc/include'
   BOEHM_GC_LDFLAGS='${abs_builddir}/extern/install/gc/lib/libgc.la'

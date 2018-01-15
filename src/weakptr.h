@@ -34,7 +34,7 @@
 */
 StructInitInfo * InitInfoWeakPtr ( void );
 
-#ifdef BOEHM_GC
+#ifdef ALT_GC
 void RegisterWeakReference(Bag *bag);
 void UnregisterWeakReference(Bag *bag);
 #endif

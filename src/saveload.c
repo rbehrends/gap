@@ -42,7 +42,7 @@ static UInt1* LBPointer;
 static UInt1* LBEnd;
 static Obj userHomeExpand;
 
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 static Int OpenForSave( Obj fname ) 
 {
@@ -327,7 +327,7 @@ void LoadString ( Obj string )
 
 void SaveSubObj( Obj subobj )
 {
-#ifdef BOEHM_GC
+#ifdef ALT_GC
   // FIXME: HACK
   assert(0);
 #else
@@ -352,7 +352,7 @@ void SaveSubObj( Obj subobj )
 
 Obj LoadSubObj( void )
 {
-#ifdef BOEHM_GC
+#ifdef ALT_GC
   // FIXME: HACK
   assert(0);
 #else
@@ -400,7 +400,7 @@ ObjFunc LoadHandler( void )
 **  Bag level saving routines
 */
 
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 static void SaveBagData (Bag bag )
 {
@@ -447,7 +447,7 @@ static void LoadBagData ( void )
 **
 */
 
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 static void WriteEndiannessMarker( void )
 {
@@ -561,7 +561,7 @@ Obj FuncFindBag( Obj self, Obj minsize, Obj maxsize, Obj tnum )
 **  The return value is either True or Fail
 */
 
-#if !defined(BOEHM_GC)
+#if !defined(ALT_GC)
 
 static UInt NextSaveIndex = 1;
 
@@ -623,7 +623,7 @@ static void WriteSaveHeader( void )
 
 Obj SaveWorkspace( Obj fname )
 {
-#ifdef BOEHM_GC
+#ifdef ALT_GC
   Pr("SaveWorkspace is not currently supported when Boehm GC is in use",0,0);
   return Fail;
 
@@ -703,7 +703,7 @@ Obj FuncSaveWorkspace(Obj self, Obj filename )
 
 void LoadWorkspace( Char * fname )
 {
-#ifdef BOEHM_GC
+#ifdef ALT_GC
   Pr("LoadWorkspace is not currently supported when Boehm GC is in use",0,0);
   return;
 

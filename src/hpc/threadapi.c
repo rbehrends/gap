@@ -919,7 +919,7 @@ Obj TypeRegion(Obj obj)
     return TYPE_REGION;
 }
 
-#ifndef BOEHM_GC
+#ifndef ALT_GC
 static void MarkSemaphoreBag(Bag);
 static void MarkChannelBag(Bag);
 static void MarkBarrierBag(Bag);
@@ -943,7 +943,15 @@ static UInt RNAM_SIGVTALRM;
 static UInt RNAM_SIGWINCH;
 #endif
 
-#ifndef BOEHM_GC
+void InitThreadAPIState(void)
+{
+}
+
+void DestroyThreadAPIState(void)
+{
+}
+
+#ifndef ALT_GC
 static void MarkSemaphoreBag(Bag bag)
 {
     Semaphore * sem = (Semaphore *)(PTR_BAG(bag));
@@ -2757,7 +2765,7 @@ static Int InitKernel(StructInitInfo * module)
     InitMarkFuncBags(T_THREAD, MarkNoSubBags);
     InitMarkFuncBags(T_MONITOR, MarkNoSubBags);
     InitMarkFuncBags(T_REGION, MarkAllSubBags);
-#ifndef BOEHM_GC
+#ifndef ALT_GC
     InitMarkFuncBags(T_SEMAPHORE, MarkSemaphoreBag);
     InitMarkFuncBags(T_CHANNEL, MarkChannelBag);
     InitMarkFuncBags(T_BARRIER, MarkBarrierBag);

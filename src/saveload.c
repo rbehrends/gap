@@ -42,7 +42,7 @@ static UInt1* LBPointer;
 static UInt1* LBEnd;
 static Obj userHomeExpand;
 
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 static Int OpenForSave( Obj fname ) 
 {
@@ -327,7 +327,7 @@ void LoadString ( Obj string )
 
 void SaveSubObj( Obj subobj )
 {
-#ifdef ALT_GC
+#ifndef USE_GASMAN
   // FIXME: HACK
   assert(0);
 #else
@@ -352,7 +352,7 @@ void SaveSubObj( Obj subobj )
 
 Obj LoadSubObj( void )
 {
-#ifdef ALT_GC
+#ifndef USE_GASMAN
   // FIXME: HACK
   assert(0);
 #else
@@ -400,7 +400,7 @@ ObjFunc LoadHandler( void )
 **  Bag level saving routines
 */
 
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 static void SaveBagData (Bag bag )
 {
@@ -447,7 +447,7 @@ static void LoadBagData ( void )
 **
 */
 
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 static void WriteEndiannessMarker( void )
 {
@@ -561,7 +561,7 @@ Obj FuncFindBag( Obj self, Obj minsize, Obj maxsize, Obj tnum )
 **  The return value is either True or Fail
 */
 
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 static UInt NextSaveIndex = 1;
 
@@ -623,8 +623,8 @@ static void WriteSaveHeader( void )
 
 Obj SaveWorkspace( Obj fname )
 {
-#ifdef ALT_GC
-  Pr("SaveWorkspace is not currently supported when Boehm GC is in use",0,0);
+#ifndef USE_GASMAN
+  Pr("SaveWorkspace is only supported when GASMAN is in use",0,0);
   return Fail;
 
 #else
@@ -703,8 +703,8 @@ Obj FuncSaveWorkspace(Obj self, Obj filename )
 
 void LoadWorkspace( Char * fname )
 {
-#ifdef ALT_GC
-  Pr("LoadWorkspace is not currently supported when Boehm GC is in use",0,0);
+#ifndef USE_GASMAN
+  Pr("LoadWorkspace is only supported when GASMAN is in use",0,0);
   return;
 
 #else

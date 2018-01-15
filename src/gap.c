@@ -3030,7 +3030,7 @@ void RecordLoadedModule (
 **  general    `InitLibrary'  will  create    all objects    and  then  calls
 **  `PostRestore'.  This function is only used when restoring.
 */
-#ifndef ALT_GC
+#ifdef USE_GASMAN
 extern TNumMarkFuncBags TabMarkFuncBags [ 256 ];
 #endif
 
@@ -3053,7 +3053,7 @@ void InitializeGap (
     InitBags( SyAllocBags, SyStorMin,
               0, (Bag*)(((UInt)pargc/C_STACK_ALIGN)*C_STACK_ALIGN), C_STACK_ALIGN,
               SyAbortBags );
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
     InitMsgsFuncBags( SyMsgsBags );
 #endif
 
@@ -3136,7 +3136,7 @@ void InitializeGap (
     }
 #endif
 
-#ifndef ALT_GC
+#ifdef USE_GASMAN
     /* and now for a special hack                                          */
     for ( i = LAST_CONSTANT_TNUM+1; i <= LAST_REAL_TNUM; i++ ) {
       if (TabMarkFuncBags[i + COPYING] == MarkAllSubBagsDefault)
@@ -3178,7 +3178,7 @@ void InitializeGap (
 
     /* otherwise call library initialisation                               */
     else {
-#       if !defined(ALT_GC)
+#       ifdef USE_GASMAN
             WarnInitGlobalBag = 1;
 #       endif
         CheckAllHandlers();
@@ -3200,7 +3200,7 @@ void InitializeGap (
                 }
             }
         }
-#if     !defined(ALT_GC)
+#       ifdef USE_GASMAN
             WarnInitGlobalBag = 0;
 #       endif
     }

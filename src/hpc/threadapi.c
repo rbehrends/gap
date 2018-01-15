@@ -919,7 +919,7 @@ Obj TypeRegion(Obj obj)
     return TYPE_REGION;
 }
 
-#ifndef ALT_GC
+#ifdef USE_GASMAN
 static void MarkSemaphoreBag(Bag);
 static void MarkChannelBag(Bag);
 static void MarkBarrierBag(Bag);
@@ -951,7 +951,7 @@ void DestroyThreadAPIState(void)
 {
 }
 
-#ifndef ALT_GC
+#ifdef USE_GASMAN
 static void MarkSemaphoreBag(Bag bag)
 {
     Semaphore * sem = (Semaphore *)(PTR_BAG(bag));
@@ -2765,7 +2765,7 @@ static Int InitKernel(StructInitInfo * module)
     InitMarkFuncBags(T_THREAD, MarkNoSubBags);
     InitMarkFuncBags(T_MONITOR, MarkNoSubBags);
     InitMarkFuncBags(T_REGION, MarkAllSubBags);
-#ifndef ALT_GC
+#ifdef USE_GASMAN
     InitMarkFuncBags(T_SEMAPHORE, MarkSemaphoreBag);
     InitMarkFuncBags(T_CHANNEL, MarkChannelBag);
     InitMarkFuncBags(T_BARRIER, MarkBarrierBag);

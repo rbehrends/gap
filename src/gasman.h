@@ -88,7 +88,7 @@ typedef struct {
     uint16_t reserved : 16;
     uint32_t size : 32;
 #endif
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
     Bag link;
 #endif
 } BagHeader;
@@ -726,7 +726,7 @@ Bag MakeBagReadOnly(Bag bag);
 **  34+3016 is the  number  of bags allocated  between  the last two  garbage
 **  collections, using 978 KByte and the other two numbers are as above.
 */
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 typedef void            (* TNumMsgsFuncBags) (
             UInt                full,
             UInt                phase,
@@ -826,7 +826,7 @@ extern void MarkAllSubBagsDefault ( Bag );
 **  identifier.
 
 */
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 extern void MarkBag( Bag bag );
 #else
 static inline void MarkBag( Bag bag ) {}
@@ -874,7 +874,7 @@ extern void MarkArrayOfBags(const Bag array[], UInt count);
 *F
 */
 
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 extern  Bag *                   MptrBags;
 extern  Bag *                   OldBags;
@@ -885,7 +885,7 @@ extern  Bag *                   AllocBags;
                                 (bag) < (Bag)OldBags  &&              \
                                 (((UInt)*bag) & (sizeof(Bag)-1)) == 1)
 
-#else
+#elif defined(USE_BOEHM_GC)
 
 #define IS_WEAK_DEAD_BAG(bag) (!(bag))
 #define REGISTER_WP(loc, obj) \
@@ -933,7 +933,7 @@ extern  void            InitSweepFuncBags (
 **
 *V  GlobalBags  . . . . . . . . . . . . . . . . . . . . . list of global bags
 */
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 #ifndef NR_GLOBAL_BAGS
 #define NR_GLOBAL_BAGS  20000L
@@ -979,7 +979,7 @@ extern void InitGlobalBag (
             Bag *               addr,
             const Char *        cookie );
 
-#if !defined(ALT_GC)
+#ifdef USE_GASMAN
 
 extern Int WarnInitGlobalBag;
 

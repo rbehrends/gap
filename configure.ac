@@ -216,7 +216,7 @@ AS_CASE([$with_gc],
     [boehm],    [AS_IF([test "x$enable_hpcgap" = xno],
                     [AC_MSG_ERROR([Boehm GC can only be used with HPC-GAP])])
                  AC_SUBST([GC_SOURCES], [src/boehm_gc.c])
-                 AC_DEFINE([BOEHM_GC],  [1], [define as 1 if Boehm GC is used])
+                 AC_DEFINE([USE_BOEHM_GC],  [1], [define as 1 if Boehm GC is used])
                  AC_DEFINE([ALT_GC],    [1], [Use alternate garbage collector])
                  ],
     [gasman],   [AS_IF([test "x$enable_hpcgap" = xyes],

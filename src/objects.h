@@ -389,7 +389,7 @@ static inline UInt SIZE_OBJ(Obj obj)
 */
 static inline Obj *ADDR_OBJ(Obj obj)
 {
-    ReadGuard(obj);
+    WriteGuard(obj);
     return PTR_BAG(obj);
 }
 

@@ -283,6 +283,19 @@ static int treap_delete(treap_t **treap, void *addr)
     return 0;
 }
 
+static uint64_t xorshift_rng_state = 1;
+
+static uint64_t xorshift_rng()
+{
+    uint64_t x = xorshift_rng_state;
+    x = x ^ (x >> 12);
+    x = x ^ (x << 25);
+    x = x ^ (x >> 27);
+    xorshift_rng_state = x;
+    return x * (uint64_t) 0x2545F4914F6CDD1DUL;
+}
+
+
 static treap_t *bigvals;
 
 void *alloc_bigval(size_t size) {
@@ -290,6 +303,7 @@ void *alloc_bigval(size_t size) {
   memset(result, 0, size);
   treap_t *node = alloc_treap();
   node->addr = result;
+  node->prio = xorshift_rng();
   treap_insert(&bigvals, node);
   return result;
 }

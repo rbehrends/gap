@@ -390,11 +390,11 @@ void            InitBags (
     TNumAbortFuncBags   abort_func )
 {
     // HOOK: initialization happens here.
-    jl_init();
+    jl_extend_init();
     jl_gc_enable(0); /// DEBUGGING
     GapStackBottom = stack_bottom;
     GapStackAlign = stack_align;
-    JuliaTLS = jl_get_ptls_states();
+    JuliaTLS = jl_extend_get_ptls_states();
     jl_root_scanner_hook = GapRootScanner;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;

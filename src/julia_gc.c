@@ -396,12 +396,10 @@ void GapRootScanner(int global) {
 }
 
 void            InitBags (
-    TNumAllocFuncBags   alloc_func,
     UInt                initial_size,
     TNumStackFuncBags   stack_func,
     Bag *               stack_bottom,
-    UInt                stack_align,
-    TNumAbortFuncBags   abort_func )
+    UInt                stack_align)
 {
     // HOOK: initialization happens here.
     jl_extend_init();

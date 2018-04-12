@@ -395,6 +395,49 @@ AC_SUBST([READLINE_CPPFLAGS])
 AC_SUBST([READLINE_LDFLAGS])
 AC_SUBST([READLINE_LIBS])
 
+
+dnl Find julia
+AC_ARG_WITH([julia],
+  [AS_HELP_STRING([--with-julia@<:@=PREFIX@:>@],
+    [specify a prefix where julia can be found])])
+
+AS_IF([test "x$with_julia" != xno],[
+  JULIA_LIBS="-ljulia"
+  AS_CASE([x"$with_julia"],
+    [xyes|x],[
+      JULIA_CPPFLAGS=
+      JULIA_LDFLAGS=
+    ],
+    [*],[
+      JULIA_CPPFLAGS="-I$with_julia/include/julia"
+      JULIA_LDFLAGS="-L$with_julia/lib"
+      JULIA_LIBS="-ljulia -Wl,-rpath,$with_julia/lib"
+    ]
+  )
+
+  AX_CHECK_LIBRARY([JULIA], [julia.h], [julia], [jl_gc_alloc], [], [], [])
+
+  # TODO: also check for gcext.h, so that we can be sure the user is pointing
+  # at a modified version of Julia.
+
+  AS_IF([test $ax_cv_have_JULIA = yes],[
+    AC_DEFINE([HAVE_LIBJULIA], [1], [Define if you have libjulia])
+  ],[
+    AS_CASE([x"$with_julia"],
+      [x], [JULIA_CPPFLAGS= JULIA_LDFLAGS= JULIA_LIBS=],
+      [*], [AC_MSG_FAILURE([--with-julia was given, but test for julia failed])]
+    )
+  ])
+])
+
+dnl TODO: check if $with_gc = julia; if so, error out if julia is not found
+
+
+AC_SUBST([JULIA_CPPFLAGS])
+AC_SUBST([JULIA_LDFLAGS])
+AC_SUBST([JULIA_LIBS])
+
+
 dnl Find ward (if HPC-GAP mode is enabled)
 AC_ARG_WITH([ward],
   [AS_HELP_STRING([--with-ward@<:@=PREFIX@:>@],

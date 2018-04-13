@@ -139,7 +139,7 @@ typedef struct treap_t {
 
 static treap_t *treap_free_list;
 
-treap_t *alloc_treap() {
+treap_t *alloc_treap(void) {
   treap_t *result;
   if (treap_free_list) {
     result = treap_free_list;
@@ -285,7 +285,7 @@ static int treap_delete(treap_t **treap, void *addr)
 
 static uint64_t xorshift_rng_state = 1;
 
-static uint64_t xorshift_rng()
+static uint64_t xorshift_rng(void)
 {
     uint64_t x = xorshift_rng_state;
     x = x ^ (x >> 12);
@@ -470,7 +470,7 @@ void            RetypeBag (
     header->type = new_type;
 }
 
-static inline Bag AllocateMasterPointer() {
+static inline Bag AllocateMasterPointer(void) {
   // HOOK: Allocate memory for the master pointer.
   // Master pointers require one word of memory.
   void *result = (void *) jl_gc_alloc(JuliaTLS,

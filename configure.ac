@@ -410,8 +410,8 @@ AS_IF([test "x$with_julia" != xno],[
     ],
     [*],[
       JULIA_CPPFLAGS="-I$with_julia/include/julia"
-      JULIA_LDFLAGS="-L$with_julia/lib"
-      JULIA_LIBS="-ljulia -Wl,-rpath,$with_julia/lib"
+      JULIA_LDFLAGS="-L$with_julia/lib -Wl,-rpath,$with_julia/lib"
+      JULIA_LIBS="-ljulia"
     ]
   )
 

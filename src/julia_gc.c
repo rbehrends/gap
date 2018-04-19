@@ -101,35 +101,6 @@ static inline int lt_ptr(void *a, void *b)
     return (uintptr_t) a < (uintptr_t) b;
 }
 
-static inline int gt_ptr(void *a, void *b)
-{
-    return (uintptr_t) a > (uintptr_t) b;
-}
-
-static inline void *max_ptr(void *a, void *b)
-{
-    if ((uintptr_t) a > (uintptr_t) b)
-        return a;
-    else
-        return b;
-}
-
-static inline void *min_ptr(void *a, void *b)
-{
-    if ((uintptr_t) a < (uintptr_t) b)
-        return a;
-    else
-        return b;
-}
-
-/* align pointer to full word if mis-aligned */
-static inline void *align_ptr(void *p)
-{
-    uintptr_t u = (uintptr_t) p;
-    u &= ~(sizeof(p)-1);
-    return (void *)u;
-}
-
 typedef struct treap_t {
   struct treap_t *left, *right;
   size_t prio;

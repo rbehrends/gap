@@ -419,6 +419,8 @@ void            InitBags (
     UInt                stack_align)
 {
     // HOOK: initialization happens here.
+    for (UInt i = 0; i < NTYPES; i++ )
+	TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();
     jl_gc_enable(0); /// DEBUGGING
     Module = jl_new_module(jl_symbol("ForeignGAP"));

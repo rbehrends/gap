@@ -350,11 +350,14 @@ void *AllocateBagMemory(int type, UInt size)
   return result;
 }
 
+TNumMarkFuncBags TabMarkFuncBags [ NTYPES ];
+
 void InitMarkFuncBags (
     UInt                type,
     TNumMarkFuncBags    mark_func )
 {
   // HOOK: set mark function for type `type`.
+  TabMarkFuncBags[type] = mark_func;
 }
 
 void InitSweepFuncBags (
@@ -395,6 +398,20 @@ void GapRootScanner(int global) {
   }
 }
 
+static jl_module_t * Module;
+
+static inline void JMark(void *cache, void *sp, void *obj) {
+  jl_gc_mark_queue_obj(cache, sp, obj);
+}
+
+void JMarkMPtr(void *cache, void *sp, void *obj) {
+  JMark(cache, sp,
+    *(char **)obj - sizeof(BagHeader));
+}
+
+void JMarkBag(void *cache, void *sp, void *obj);
+
+
 void            InitBags (
     UInt                initial_size,
     TNumStackFuncBags   stack_func,
@@ -404,6 +421,11 @@ void            InitBags (
     // HOOK: initialization happens here.
     jl_extend_init();
     jl_gc_enable(0); /// DEBUGGING
+    Module = jl_new_module(jl_symbol("ForeignGAP"));
+    datatype_mptr = jl_new_foreign_type(jl_symbol("Bag"),
+      Module, NULL, JMarkMPtr, NULL);
+    datatype_bag = jl_new_foreign_type(jl_symbol("BagInner"),
+      Module, NULL, JMarkBag, NULL);
     GapStackBottom = stack_bottom;
     GapStackAlign = stack_align;
     JuliaTLS = jl_extend_get_ptls_states();
@@ -608,34 +630,73 @@ void SwapMasterPoint( Bag bag1, Bag bag2 )
 
 // HOOK: mark functions
 
+static void *JCache;
+static void *JSp;
+
+static inline void MarkSlot(Bag bag, int slot)
+{
+    if (IS_BAG_REF(bag[slot])) JMark(JCache, JSp, bag[slot]);
+}
+
+
 void MarkNoSubBags( Bag bag )
 {
 }
 
 void MarkOneSubBags( Bag bag )
 {
+    MarkSlot(bag, 0);
 }
 
 void MarkTwoSubBags( Bag bag )
 {
+    MarkSlot(bag, 0);
+    MarkSlot(bag, 1);
 }
 
 void MarkThreeSubBags( Bag bag )
 {
+    MarkSlot(bag, 0);
+    MarkSlot(bag, 1);
+    MarkSlot(bag, 2);
 }
 
 void MarkFourSubBags( Bag bag )
 {
+    MarkSlot(bag, 0);
+    MarkSlot(bag, 1);
+    MarkSlot(bag, 2);
+    MarkSlot(bag, 3);
 }
 
 void MarkAllSubBags( Bag bag )
 {
+    BagHeader *hdr = (BagHeader *)bag - 1;
+    UInt i, size = hdr->size / sizeof(Bag);
+    for (i = 0; i < size; i++) {
+	MarkSlot(bag, i);
+    }
 }
 
 void MarkBagWeakly( Bag bag )
 {
+    MarkAllSubBags(bag);
 }
 
 void MarkArrayOfBags( const Bag array[], UInt count )
 {
+    UInt i;
+    for (i = 0; i < count; i++) {
+      MarkSlot((Bag) (array[i]), 0);
+    }
+}
+
+void JMarkBag(void *cache, void *sp, void *obj)
+{
+  JCache = cache;
+  JSp = sp;
+  BagHeader *hdr = (BagHeader *)obj;
+  Bag contents = (Bag)(hdr + 1);
+  UInt tnum = hdr->type;
+  TabMarkFuncBags[tnum](contents);
 }

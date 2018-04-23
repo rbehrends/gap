@@ -378,6 +378,20 @@ static void TryMark(void *p)
   }
 }
 
+static void TryMarkRange(void *start, void *end)
+{
+  if (gt_ptr(start, end)) {
+    void *t = start;
+    start = end;
+    end = t;
+  }
+  void **p = align_ptr(start);
+  while (lt_ptr(p, end)) {
+    TryMark(p);
+    p++;
+  }
+}
+
 void CHANGED_BAG(Bag bag) {
   // This is the simple Julia write barrier; jl_gc_wb() is more accurate
   // but requires a pointer to the originating back, too, so we go with
@@ -388,9 +402,8 @@ void CHANGED_BAG(Bag bag) {
 void GapRootScanner(int global) {
   syJmp_buf registers;
   sySetjmp(registers);
-  for (char *p = (char *)registers; p < (char *) GapStackBottom; p += sizeof(Int)) {
-    TryMark(*(void **)p);
-  }
+  TryMarkRange(registers, registers + sizeof(syJmp_buf));
+  TryMarkRange(registers + sizeof(syJmp_buf), GapStackBottom);
   for (Int i = 0; i < GlobalCount; i++) {
     Bag p = *GlobalAddr[i];
     if (IS_BAG_REF(p))

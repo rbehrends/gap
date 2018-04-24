@@ -662,17 +662,20 @@ void MarkNoSubBags( Bag bag )
 
 void MarkOneSubBags( Bag bag )
 {
+    bag = *(Bag *) bag;
     MarkSlot(bag, 0);
 }
 
 void MarkTwoSubBags( Bag bag )
 {
+    bag = *(Bag *) bag;
     MarkSlot(bag, 0);
     MarkSlot(bag, 1);
 }
 
 void MarkThreeSubBags( Bag bag )
 {
+    bag = *(Bag *) bag;
     MarkSlot(bag, 0);
     MarkSlot(bag, 1);
     MarkSlot(bag, 2);
@@ -680,6 +683,7 @@ void MarkThreeSubBags( Bag bag )
 
 void MarkFourSubBags( Bag bag )
 {
+    bag = *(Bag *) bag;
     MarkSlot(bag, 0);
     MarkSlot(bag, 1);
     MarkSlot(bag, 2);
@@ -688,6 +692,7 @@ void MarkFourSubBags( Bag bag )
 
 void MarkAllSubBags( Bag bag )
 {
+    bag = *(Bag *) bag;
     BagHeader *hdr = (BagHeader *)bag - 1;
     UInt i, size = hdr->size / sizeof(Bag);
     for (i = 0; i < size; i++) {
@@ -715,5 +720,5 @@ void JMarkBag(void *cache, void *sp, void *obj)
   BagHeader *hdr = (BagHeader *)obj;
   Bag contents = (Bag)(hdr + 1);
   UInt tnum = hdr->type;
-  TabMarkFuncBags[tnum](contents);
+  TabMarkFuncBags[tnum]((Bag)&contents);
 }

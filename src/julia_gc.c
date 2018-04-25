@@ -349,6 +349,7 @@ void *AllocateBagMemory(int type, UInt size)
 {
   // HOOK: return `size` bytes memory of TNUM `type`.
   void *result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_bag);
+  memset(result, 0, size);
   return result;
 }
 

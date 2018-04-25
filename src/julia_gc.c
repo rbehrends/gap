@@ -389,7 +389,7 @@ static void TryMarkRange(void *start, void *end)
   }
   void **p = align_ptr(start);
   while (lt_ptr(p, end)) {
-    TryMark(p);
+    TryMark(*p);
     p++;
   }
 }

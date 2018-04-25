@@ -620,6 +620,7 @@ void InitGlobalBag (
     const Char *        cookie )
 {
   // HOOK: Register global root.
+  GAP_ASSERT(GlobalCount < NR_GLOBAL_BAGS);
   GlobalAddr[GlobalCount] = addr;
   GlobalCookie[GlobalCount] = cookie;
   GlobalCount++;

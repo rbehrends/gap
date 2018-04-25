@@ -457,7 +457,7 @@ void            InitBags (
     for (UInt i = 0; i < NTYPES; i++ )
 	TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();
-    jl_gc_enable(0); /// DEBUGGING
+    // jl_gc_enable(0); /// DEBUGGING
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     datatype_mptr = jl_new_foreign_type(jl_symbol("Bag"),
       Module, NULL, JMarkMPtr, NULL);

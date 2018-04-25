@@ -132,6 +132,22 @@ static inline void *align_ptr(void *p)
     return (void *)u;
 }
 
+// keep additional roots if necessary
+
+typedef struct kept_t {
+  struct kept_t *next;
+  void *addr;
+} kept_t;
+
+static kept_t *kept_addresses = NULL;
+
+static void keep_addr(void *addr) {
+  kept_t *kept = malloc(sizeof(kept_t));
+  kept->next = kept_addresses;
+  kept->addr = addr;
+  kept_addresses = kept;
+}
+
 typedef struct treap_t {
   struct treap_t *left, *right;
   size_t prio;
@@ -412,6 +428,9 @@ void GapRootScanner(int global) {
     if (IS_BAG_REF(p))
       jl_gc_queue_root((jl_value_t *) p);
   }
+  for (kept_t *k = kept_addresses; k; k = k->next) {
+    jl_gc_queue_root(k->addr);
+  }
 }
 
 static jl_module_t * Module;
@@ -506,6 +525,7 @@ Bag NewBag (
 
     alloc_size = sizeof(BagHeader) + size;
     bag = AllocateMasterPointer();
+    keep_addr(bag);
 
     SizeAllBags             += size;
 
@@ -542,6 +562,7 @@ Bag NewBag (
      * large objects.
      */
     BagHeader * header = AllocateBagMemory(type, alloc_size);
+    keep_addr(header);
 
     header->type = type;
     header->flags = 0;
@@ -594,6 +615,7 @@ UInt ResizeBag (
         if (new_size == 0)
             alloc_size++;
         header = AllocateBagMemory(type, alloc_size);
+	keep_addr(header);
 
         header->type = type;
         header->flags = flags;

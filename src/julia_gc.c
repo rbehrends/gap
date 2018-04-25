@@ -456,6 +456,7 @@ UInt CollectBags (
     UInt                full )
 {
     // HOOK: perform a full collection
+    jl_gc_collect(1);
     return 1;
 }
 

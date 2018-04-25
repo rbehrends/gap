@@ -651,67 +651,52 @@ void SwapMasterPoint( Bag bag1, Bag bag2 )
 static void *JCache;
 static void *JSp;
 
-static inline void MarkSlot(Bag bag, int slot)
+inline void MarkBag(Bag bag)
 {
-    if (IS_BAG_REF(bag[slot])) JMark(JCache, JSp, bag[slot]);
+    if (IS_BAG_REF(bag))
+        JMark(JCache, JSp, bag);
 }
 
-
-void MarkNoSubBags( Bag bag )
+inline void MarkArrayOfBags(const Bag array[], UInt count)
 {
-}
-
-void MarkOneSubBags( Bag bag )
-{
-    bag = *(Bag *) bag;
-    MarkSlot(bag, 0);
-}
-
-void MarkTwoSubBags( Bag bag )
-{
-    bag = *(Bag *) bag;
-    MarkSlot(bag, 0);
-    MarkSlot(bag, 1);
-}
-
-void MarkThreeSubBags( Bag bag )
-{
-    bag = *(Bag *) bag;
-    MarkSlot(bag, 0);
-    MarkSlot(bag, 1);
-    MarkSlot(bag, 2);
-}
-
-void MarkFourSubBags( Bag bag )
-{
-    bag = *(Bag *) bag;
-    MarkSlot(bag, 0);
-    MarkSlot(bag, 1);
-    MarkSlot(bag, 2);
-    MarkSlot(bag, 3);
-}
-
-void MarkAllSubBags( Bag bag )
-{
-    bag = *(Bag *) bag;
-    BagHeader *hdr = (BagHeader *)bag - 1;
-    UInt i, size = hdr->size / sizeof(Bag);
-    for (i = 0; i < size; i++) {
-	MarkSlot(bag, i);
+    for (UInt i = 0; i < count; i++) {
+        MarkBag(array[i]);
     }
+}
+
+void MarkNoSubBags(Bag bag)
+{
+}
+
+void MarkOneSubBags(Bag bag)
+{
+    MarkArrayOfBags(CONST_PTR_BAG(bag), 1);
+}
+
+void MarkTwoSubBags(Bag bag)
+{
+    MarkArrayOfBags(CONST_PTR_BAG(bag), 2);
+}
+
+void MarkThreeSubBags(Bag bag)
+{
+    MarkArrayOfBags(CONST_PTR_BAG(bag), 3);
+}
+
+void MarkFourSubBags(Bag bag)
+{
+    MarkArrayOfBags(CONST_PTR_BAG(bag), 4);
+}
+
+void MarkAllSubBags(Bag bag)
+{
+    MarkArrayOfBags(CONST_PTR_BAG(bag), SIZE_BAG(bag) / sizeof(Bag));
 }
 
 void MarkBagWeakly( Bag bag )
 {
+    // TODO: implement proper weak pointers
     MarkAllSubBags(bag);
-}
-
-void MarkArrayOfBags( const Bag array[], UInt count )
-{
-    UInt i;
-    for (i = 0; i < count; i++) {
-      MarkSlot((Bag) (array[i]), 0);
-    }
 }
 
 void JMarkBag(void *cache, void *sp, void *obj)

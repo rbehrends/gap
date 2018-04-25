@@ -830,10 +830,10 @@ extern void MarkAllSubBagsDefault ( Bag );
 **  identifier.
 
 */
-#ifdef USE_GASMAN
-extern void MarkBag( Bag bag );
-#else
+#ifdef USE_BOEHM_GC
 static inline void MarkBag( Bag bag ) {}
+#else
+extern void MarkBag( Bag bag );
 #endif
 
 

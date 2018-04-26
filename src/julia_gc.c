@@ -672,8 +672,10 @@ static void *JSp;
 
 inline void MarkBag(Bag bag)
 {
-    if (IS_BAG_REF(bag))
-        JMark(JCache, JSp, bag);
+    if (IS_BAG_REF(bag)) {
+        void *p = jl_pool_base_ptr(bag);
+        if (p) JMark(JCache, JSp, p);
+    }
 }
 
 inline void MarkArrayOfBags(const Bag array[], UInt count)

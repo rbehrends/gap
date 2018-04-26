@@ -1981,14 +1981,14 @@ static ObjFunc LoadHandler( void )
 */
 void SaveFunction ( Obj func )
 {
-  FuncBag * header = FUNC(func);
+  const FuncBag * header = CONST_FUNC(func);
   for (UInt i = 0; i <= 7; i++)
     SaveHandler(header->handlers[i]);
   SaveSubObj(header->name);
-  SaveUInt(header->nargs);
+  SaveSubObj(header->nargs);
   SaveSubObj(header->namesOfLocals);
   SaveSubObj(header->prof);
-  SaveUInt(header->nloc);
+  SaveSubObj(header->nloc);
   SaveSubObj(header->body);
   SaveSubObj(header->envi);
   SaveSubObj(header->fexs);
@@ -2007,10 +2007,10 @@ void LoadFunction ( Obj func )
   for (UInt i = 0; i <= 7; i++)
     header->handlers[i] = LoadHandler();
   header->name = LoadSubObj();
-  header->nargs = LoadUInt();
+  header->nargs = LoadSubObj();
   header->namesOfLocals = LoadSubObj();
   header->prof = LoadSubObj();
-  header->nloc = LoadUInt();
+  header->nloc = LoadSubObj();
   header->body = LoadSubObj();
   header->envi = LoadSubObj();
   header->fexs = LoadSubObj();
@@ -2019,6 +2019,21 @@ void LoadFunction ( Obj func )
 }
 
 #endif
+
+/****************************************************************************
+**
+*F  MarkFunctionSubBags( <bag> ) . . . . . . . marking function for functions
+**
+**  'MarkFunctionSubBags' is the marking function for bags of type 'T_FUNCTION'.
+*/
+void MarkFunctionSubBags(Obj func)
+{
+    // the first eight slots are pointers to C functions, so we need
+    // to skip those for marking
+    UInt size = SIZE_BAG(func) / sizeof(Obj) - 8;
+    const Bag * data = CONST_PTR_BAG(func) + 8;
+    MarkArrayOfBags(data, size);
+}
 
 
 /****************************************************************************
@@ -2090,7 +2105,7 @@ static Int InitKernel (
   
     /* install the marking functions                                       */
     InfoBags[ T_FUNCTION ].name = "function";
-    InitMarkFuncBags( T_FUNCTION , MarkAllSubBags );
+    InitMarkFuncBags(T_FUNCTION, MarkFunctionSubBags);
 
     /* Allocate functions in the public region */
     MakeBagTypePublic(T_FUNCTION);

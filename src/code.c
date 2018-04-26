@@ -43,6 +43,10 @@
 
 GAP_STATIC_ASSERT(sizeof(StatHeader) == 8, "StatHeader has wrong size");
 
+
+static Obj TYPE_KERNEL_OBJECT;
+
+
 /****************************************************************************
 **
 *V  PtrBody . . . . . . . . . . . . . . . . . . . . . pointer to current body
@@ -294,9 +298,10 @@ Expr            NewExpr (
 **  'PopStat' returns the  top statement from the  statements  stack and pops
 **  it.  It is an error if the stack is empty.
 */
-/* TL: Bag StackStat; */
-
-/* TL: Int CountStat; */
+static inline UInt CapacityStatStack(void)
+{
+    return SIZE_BAG(STATE(StackStat))/sizeof(Stat) - 1;
+}
 
 static void PushStat (
     Stat                stat )
@@ -304,14 +309,17 @@ static void PushStat (
     /* there must be a stack, it must not be underfull or overfull         */
     assert( STATE(StackStat) != 0 );
     assert( 0 <= STATE(CountStat) );
-    assert( STATE(CountStat) <= SIZE_BAG(STATE(StackStat))/sizeof(Stat) );
+    assert( STATE(CountStat) <= CapacityStatStack() );
     assert( stat != 0 );
 
-    /* count up and put the statement onto the stack                       */
-    if ( STATE(CountStat) == SIZE_BAG(STATE(StackStat))/sizeof(Stat) ) {
-        ResizeBag( STATE(StackStat), 2*STATE(CountStat)*sizeof(Stat) );
+    // count up and put the statement onto the stack
+    if ( STATE(CountStat) == CapacityStatStack() ) {
+        ResizeBag( STATE(StackStat), (2*STATE(CountStat) + 1)*sizeof(Stat) );
     }
-    ((Stat*)PTR_BAG(STATE(StackStat)))[STATE(CountStat)] = stat;
+
+    // put
+    Stat * data = (Stat *)PTR_BAG(STATE(StackStat)) + 1;
+    data[STATE(CountStat)] = stat;
     STATE(CountStat)++;
 }
 
@@ -322,11 +330,12 @@ static Stat PopStat ( void )
     /* there must be a stack, it must not be underfull/empty or overfull   */
     assert( STATE(StackStat) != 0 );
     assert( 1 <= STATE(CountStat) );
-    assert( STATE(CountStat) <= SIZE_BAG(STATE(StackStat))/sizeof(Stat) );
+    assert( STATE(CountStat) <= CapacityStatStack() );
 
     /* get the top statement from the stack, and count down                */
     STATE(CountStat)--;
-    stat = ((Stat*)PTR_BAG(STATE(StackStat)))[STATE(CountStat)];
+    Stat * data = (Stat *)PTR_BAG(STATE(StackStat)) + 1;
+    stat = data[STATE(CountStat)];
 
     /* return the popped statement                                         */
     return stat;
@@ -415,39 +424,42 @@ static inline Stat PopLoopStat(UInt baseType, UInt extra, UInt nr)
 **  'PopExpr' returns the top expressions from the expressions stack and pops
 **  it.  It is an error if the stack is empty.
 */
-/* TL: Bag StackExpr; */
+static inline UInt CapacityStackExpr(void)
+{
+    return SIZE_BAG(STATE(StackExpr))/sizeof(Expr) - 1;
+}
 
-/* TL: Int CountExpr; */
-
-void PushExpr (
-    Expr                expr )
+static void PushExpr(Expr expr)
 {
     /* there must be a stack, it must not be underfull or overfull         */
     assert( STATE(StackExpr) != 0 );
     assert( 0 <= STATE(CountExpr) );
-    assert( STATE(CountExpr) <= SIZE_BAG(STATE(StackExpr))/sizeof(Expr) );
+    assert( STATE(CountExpr) <= CapacityStackExpr() );
     assert( expr != 0 );
 
     /* count up and put the expression onto the stack                      */
-    if ( STATE(CountExpr) == SIZE_BAG(STATE(StackExpr))/sizeof(Expr) ) {
-        ResizeBag( STATE(StackExpr), 2*STATE(CountExpr)*sizeof(Expr) );
+    if ( STATE(CountExpr) == CapacityStackExpr() ) {
+        ResizeBag( STATE(StackExpr), (2*STATE(CountExpr) + 1)*sizeof(Expr) );
     }
-    ((Expr*)PTR_BAG(STATE(StackExpr)))[STATE(CountExpr)] = expr;
+
+    Expr * data = (Expr *)PTR_BAG(STATE(StackExpr)) + 1;
+    data[STATE(CountExpr)] = expr;
     STATE(CountExpr)++;
 }
 
-Expr PopExpr ( void )
+static Expr PopExpr(void)
 {
     Expr                expr;
 
     /* there must be a stack, it must not be underfull/empty or overfull   */
     assert( STATE(StackExpr) != 0 );
     assert( 1 <= STATE(CountExpr) );
-    assert( STATE(CountExpr) <= SIZE_BAG(STATE(StackExpr))/sizeof(Expr) );
+    assert( STATE(CountExpr) <= CapacityStackExpr() );
 
     /* get the top expression from the stack, and count down               */
     STATE(CountExpr)--;
-    expr = ((Expr*)PTR_BAG(STATE(StackExpr)))[STATE(CountExpr)];
+    Expr * data = (Expr *)PTR_BAG(STATE(StackExpr)) + 1;
+    expr = data[STATE(CountExpr)];
 
     /* return the popped expression                                        */
     return expr;
@@ -3347,6 +3359,8 @@ static Int InitKernel (
 
     InitHdlrFuncsFromTable( GVarFuncs );
 
+    ImportGVarFromLibrary( "TYPE_KERNEL_OBJECT", &TYPE_KERNEL_OBJECT );
+
     /* return success                                                      */
     return 0;
 }
@@ -3401,8 +3415,6 @@ static Int PostRestore (
 static Int PreSave (
     StructInitInfo *    module )
 {
-  UInt i;
-
   /* Can't save in mid-parsing */
   if (STATE(CountExpr) || STATE(CountStat))
     return 1;
@@ -3410,11 +3422,11 @@ static Int PreSave (
   /* push the FP cache index out into a GAP Variable */
   AssGVar(GVarName("SavedFloatIndex"), INTOBJ_INT(NextFloatExprNumber));
 
-  /* clean any old data out of the statement and expression stacks */
-  for (i = 0; i < SIZE_BAG(STATE(StackStat))/sizeof(UInt); i++)
-    ADDR_OBJ(STATE(StackStat))[i] = (Obj)0;
-  for (i = 0; i < SIZE_BAG(STATE(StackExpr))/sizeof(UInt); i++)
-    ADDR_OBJ(STATE(StackExpr))[i] = (Obj)0;
+  // clean any old data out of the statement and expression stacks,
+  // but leave the type field alone
+  memset(ADDR_OBJ(STATE(StackStat)) + 1, 0, SIZE_BAG(STATE(StackStat)) - sizeof(Obj));
+  memset(ADDR_OBJ(STATE(StackExpr)) + 1, 0, SIZE_BAG(STATE(StackExpr)) - sizeof(Obj));
+
   /* return success                                                      */
   return 0;
 }
@@ -3425,9 +3437,11 @@ static void InitModuleState(ModuleStateOffset offset)
     STATE(LoopNesting) = 0;
     STATE(LoopStackCount) = 0;
 
-    /* allocate the statements and expressions stacks                      */
-    STATE(StackStat) = NewBag( T_BODY, 64*sizeof(Stat) );
-    STATE(StackExpr) = NewBag( T_BODY, 64*sizeof(Expr) );
+    // allocate the statements and expressions stacks
+    STATE(StackStat) = NewBag(T_DATOBJ, sizeof(Obj) + 64*sizeof(Stat));
+    STATE(StackExpr) = NewBag(T_DATOBJ, sizeof(Obj) + 64*sizeof(Expr));
+    SET_TYPE_DATOBJ(STATE(StackStat), TYPE_KERNEL_OBJECT);
+    SET_TYPE_DATOBJ(STATE(StackExpr), TYPE_KERNEL_OBJECT);
 
 #ifdef HPCGAP
     STATE(OffsBodyStack) = AllocateMemoryBlock(MAX_FUNC_EXPR_NESTING*sizeof(Stat));

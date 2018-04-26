@@ -816,6 +816,8 @@ extern void MarkAllSubBags( Bag bag );
 
 extern void MarkAllSubBagsDefault ( Bag );
 
+extern void MarkAllButFirstSubBags( Bag bag );
+
 /****************************************************************************
 **
 *F  MarkBag(<bag>) . . . . . . . . . . . . . . . . . . .  mark a bag as live

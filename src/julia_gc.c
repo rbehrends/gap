@@ -137,15 +137,24 @@ static inline void *align_ptr(void *p)
 typedef struct kept_t {
   struct kept_t *next;
   void *addr;
+  int kind;
 } kept_t;
 
 static kept_t *kept_addresses = NULL;
 
-static void keep_addr(void *addr) {
+static void keep_addr(void *addr, int kind) {
   kept_t *kept = malloc(sizeof(kept_t));
   kept->next = kept_addresses;
   kept->addr = addr;
+  kept->kind = kind;
   kept_addresses = kept;
+}
+
+int is_kept_addr(void *addr) {
+  for (kept_t *k = kept_addresses; k; k = k->next) {
+    if (k->addr == addr) return 1;
+  }
+  return 0;
 }
 
 typedef struct treap_t {
@@ -338,6 +347,9 @@ static jl_datatype_t *datatype_bag;
 static void *GapStackBottom = NULL;
 static size_t GapStackAlign = sizeof(Int);
 static jl_ptls_t JuliaTLS = NULL;
+static void *JCache;
+static void *JSp;
+
 
 #ifndef NR_GLOBAL_BAGS
 #define NR_GLOBAL_BAGS 20000L
@@ -366,6 +378,7 @@ void *AllocateBagMemory(int type, UInt size)
   // HOOK: return `size` bytes memory of TNUM `type`.
   void *result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_bag);
   memset(result, 0, size);
+  keep_addr(result, 1);
   return result;
 }
 
@@ -387,13 +400,35 @@ void InitSweepFuncBags (
   // This is intended for weak pointer objects.
 }
 
+static int IsValidPtr(void *p) {
+  return jl_pool_base_ptr(p) != NULL
+      || treap_find(bigvals, p) != NULL;
+}
+
+static int IsValidBag(Bag bag) {
+  uintptr_t *contents = (uintptr_t *)((BagHeader *)(PTR_BAG(bag)) - 1);
+  return (contents[-1] ^ (uintptr_t) datatype_bag) < 4;
+}
+
+static int IsValidMPtr(Bag bag) {
+  uintptr_t *contents = (uintptr_t *)((BagHeader *)(PTR_BAG(bag)) - 1);
+  return (contents[-1] ^ (uintptr_t) datatype_mptr) < 4;
+}
+
+
+static inline void JMark(void *cache, void *sp, void *obj) {
+  jl_gc_mark_queue_obj(cache, sp, obj);
+}
+
 static void TryMark(void *p) 
 {
   jl_value_t *p2 = jl_pool_base_ptr(p);
   if (!p2)
     p2 = treap_find(bigvals, p);
   if (p2) {
-    jl_gc_queue_root(p2);
+    if (!IsValidMPtr((Bag)p2))
+      abort();
+    JMark(JCache, JSp, p2);
   }
 }
 
@@ -418,7 +453,9 @@ void CHANGED_BAG(Bag bag) {
   jl_gc_wb_back((void *)bag);
 }
 
-void GapRootScanner(int global) {
+void GapRootScanner(int global, void *cache, void *sp) {
+  JCache = cache;
+  JSp = sp;
   syJmp_buf registers;
   sySetjmp(registers);
   TryMarkRange(registers, registers + sizeof(syJmp_buf));
@@ -426,20 +463,23 @@ void GapRootScanner(int global) {
   for (Int i = 0; i < GlobalCount; i++) {
     Bag p = *GlobalAddr[i];
     if (IS_BAG_REF(p))
-      jl_gc_queue_root((jl_value_t *) p);
+      JMark(JCache, JSp, p);
   }
   for (kept_t *k = kept_addresses; k; k = k->next) {
-    jl_gc_queue_root(k->addr);
+    void *addr = k->addr;
+    if (k->kind == 0 && !*(Bag)addr) continue;
+    if (!IsValidMPtr(addr) && !IsValidBag(addr))
+      abort();
+    JMark(JCache, JSp, k->addr);
   }
 }
 
 static jl_module_t * Module;
 
-static inline void JMark(void *cache, void *sp, void *obj) {
-  jl_gc_mark_queue_obj(cache, sp, obj);
-}
-
 void JMarkMPtr(void *cache, void *sp, void *obj) {
+  if (!*(void **)obj) return;
+  if (!IsValidBag(obj))
+    abort();
   JMark(cache, sp,
     *(char **)obj - sizeof(BagHeader));
 }
@@ -513,6 +553,8 @@ static inline Bag AllocateMasterPointer(void) {
   // Master pointers require one word of memory.
   void *result = (void *) jl_gc_alloc(JuliaTLS,
     sizeof(void *), datatype_mptr);
+  memset(result, 0, sizeof(void *));
+  keep_addr(result, 0);
   return result;
 }
 
@@ -525,7 +567,6 @@ Bag NewBag (
 
     alloc_size = sizeof(BagHeader) + size;
     bag = AllocateMasterPointer();
-    keep_addr(bag);
 
     SizeAllBags             += size;
 
@@ -562,7 +603,6 @@ Bag NewBag (
      * large objects.
      */
     BagHeader * header = AllocateBagMemory(type, alloc_size);
-    keep_addr(header);
 
     header->type = type;
     header->flags = 0;
@@ -615,7 +655,6 @@ UInt ResizeBag (
         if (new_size == 0)
             alloc_size++;
         header = AllocateBagMemory(type, alloc_size);
-	keep_addr(header);
 
         header->type = type;
         header->flags = flags;
@@ -667,14 +706,15 @@ void SwapMasterPoint( Bag bag1, Bag bag2 )
 
 // HOOK: mark functions
 
-static void *JCache;
-static void *JSp;
-
 inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
         void *p = jl_pool_base_ptr(bag);
-        if (p) JMark(JCache, JSp, p);
+        if (p) {
+	  if (!IsValidMPtr(p))
+	    abort();
+	  JMark(JCache, JSp, p);
+	}
     }
 }
 

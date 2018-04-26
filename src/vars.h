@@ -78,8 +78,8 @@ static inline int IS_LVARS_OR_HVARS(Obj obj)
 
 typedef struct {
     Obj func;
-    Expr stat;
     Obj parent;
+    Expr stat;
 } LVarsHeader;
 
 /****************************************************************************

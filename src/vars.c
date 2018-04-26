@@ -2591,9 +2591,9 @@ static Int InitKernel (
 
     /* install the marking functions for local variables bag               */
     InfoBags[ T_LVARS ].name = "values bag";
-    InitMarkFuncBags( T_LVARS, MarkAllSubBags );
+    InitMarkFuncBags( T_LVARS, MarkTwoSubBags );
     InfoBags[ T_HVARS ].name = "high variables bag";
-    InitMarkFuncBags( T_HVARS, MarkAllSubBags );
+    InitMarkFuncBags( T_HVARS, MarkTwoSubBags );
 
 #ifdef HPCGAP
     /* Make T_LVARS bags public */

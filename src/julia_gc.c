@@ -405,13 +405,13 @@ static int IsValidPtr(void *p) {
       || treap_find(bigvals, p) != NULL;
 }
 
-static int IsValidBag(Bag bag) {
-  uintptr_t *contents = (uintptr_t *)((BagHeader *)(PTR_BAG(bag)) - 1);
+static int IsValidBag(void *bag) {
+  uintptr_t *contents = (uintptr_t *) bag;
   return (contents[-1] ^ (uintptr_t) datatype_bag) < 4;
 }
 
 static int IsValidMPtr(Bag bag) {
-  uintptr_t *contents = (uintptr_t *)((BagHeader *)(PTR_BAG(bag)) - 1);
+  uintptr_t *contents = (uintptr_t *) bag;
   return (contents[-1] ^ (uintptr_t) datatype_mptr) < 4;
 }
 
@@ -468,7 +468,9 @@ void GapRootScanner(int global, void *cache, void *sp) {
   for (kept_t *k = kept_addresses; k; k = k->next) {
     void *addr = k->addr;
     if (k->kind == 0 && !*(Bag)addr) continue;
-    if (!IsValidMPtr(addr) && !IsValidBag(addr))
+    if (k->kind == 0 && !IsValidMPtr(addr))
+      abort();
+    if (k->kind == 1 && !IsValidBag(addr))
       abort();
     JMark(JCache, JSp, k->addr);
   }
@@ -478,10 +480,9 @@ static jl_module_t * Module;
 
 void JMarkMPtr(void *cache, void *sp, void *obj) {
   if (!*(void **)obj) return;
-  if (!IsValidBag(obj))
+  if (!IsValidBag(BAG_HEADER(obj)))
     abort();
-  JMark(cache, sp,
-    *(char **)obj - sizeof(BagHeader));
+  JMark(cache, sp, BAG_HEADER(obj));
 }
 
 void JMarkBag(void *cache, void *sp, void *obj);

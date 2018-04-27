@@ -344,11 +344,13 @@ void free_bigval(void *p) {
 
 static jl_datatype_t *datatype_mptr;
 static jl_datatype_t *datatype_bag;
+static jl_datatype_t *datatype_largebag;
 static void *GapStackBottom = NULL;
 static size_t GapStackAlign = sizeof(Int);
 static jl_ptls_t JuliaTLS = NULL;
 static void *JCache;
 static void *JSp;
+static size_t max_pool_obj_size;
 
 
 #ifndef NR_GLOBAL_BAGS
@@ -373,10 +375,15 @@ static Int GlobalCount;
 **  references to other bags, and > 0 to indicate a specific memory layout
 **  descriptor.
 **/
+
 void *AllocateBagMemory(int type, UInt size)
 {
   // HOOK: return `size` bytes memory of TNUM `type`.
-  void *result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_bag);
+  void *result;
+  if (size <= max_pool_obj_size)
+    result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_bag);
+  else
+    result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_largebag);
   memset(result, 0, size);
   keep_addr(result, 1);
   return result;
@@ -407,7 +414,8 @@ static int IsValidPtr(void *p) {
 
 static int IsValidBag(void *bag) {
   uintptr_t *contents = (uintptr_t *) bag;
-  return (contents[-1] ^ (uintptr_t) datatype_bag) < 4;
+  return (contents[-1] ^ (uintptr_t) datatype_bag) < 4
+      || (contents[-1] ^ (uintptr_t) datatype_largebag) < 4;
 }
 
 static int IsValidMPtr(Bag bag) {
@@ -499,11 +507,14 @@ void            InitBags (
 	TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();
     // jl_gc_enable(0); /// DEBUGGING
+    max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     datatype_mptr = jl_new_foreign_type(jl_symbol("Bag"),
-      Module, NULL, JMarkMPtr, NULL);
+      Module, NULL, JMarkMPtr, NULL, 1, 0);
     datatype_bag = jl_new_foreign_type(jl_symbol("BagInner"),
-      Module, NULL, JMarkBag, NULL);
+      Module, NULL, JMarkBag, NULL, 1, 0);
+    datatype_largebag = jl_new_foreign_type(jl_symbol("BagInner"),
+      Module, NULL, JMarkBag, NULL, 1, 1);
     GapStackBottom = stack_bottom;
     GapStackAlign = stack_align;
     JuliaTLS = jl_extend_get_ptls_states();

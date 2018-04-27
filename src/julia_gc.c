@@ -464,6 +464,9 @@ void CHANGED_BAG(Bag bag) {
 void GapRootScanner(int global, void *cache, void *sp) {
   JCache = cache;
   JSp = sp;
+  JMark(JCache, JSp, datatype_mptr);
+  JMark(JCache, JSp, datatype_bag);
+  JMark(JCache, JSp, datatype_largebag);
   syJmp_buf registers;
   sySetjmp(registers);
   TryMarkRange(registers, registers + sizeof(syJmp_buf));
@@ -510,11 +513,14 @@ void            InitBags (
     max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     datatype_mptr = jl_new_foreign_type(jl_symbol("Bag"),
-      Module, NULL, JMarkMPtr, NULL, 1, 0);
+      Module, jl_any_type, JMarkMPtr, NULL, 1, 0);
     datatype_bag = jl_new_foreign_type(jl_symbol("BagInner"),
-      Module, NULL, JMarkBag, NULL, 1, 0);
+      Module, jl_any_type, JMarkBag, NULL, 1, 0);
     datatype_largebag = jl_new_foreign_type(jl_symbol("BagInner"),
-      Module, NULL, JMarkBag, NULL, 1, 1);
+      Module, jl_any_type, JMarkBag, NULL, 1, 1);
+    assert(jl_is_datatype(datatype_mptr));
+    assert(jl_is_datatype(datatype_bag));
+    assert(jl_is_datatype(datatype_largebag));
     GapStackBottom = stack_bottom;
     GapStackAlign = stack_align;
     JuliaTLS = jl_extend_get_ptls_states();

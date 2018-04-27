@@ -143,7 +143,6 @@ typedef struct kept_t {
 static kept_t *kept_addresses = NULL;
 
 static void keep_addr(void *addr, int kind) {
-  return;
   kept_t *kept = malloc(sizeof(kept_t));
   kept->next = kept_addresses;
   kept->addr = addr;
@@ -395,7 +394,6 @@ void *AllocateBagMemory(int type, UInt size)
       abort();
   }
   memset(result, 0, size);
-  keep_addr(result, 1);
   return result;
 }
 
@@ -466,10 +464,7 @@ static void TryMarkRange(void *start, void *end)
 }
 
 void CHANGED_BAG(Bag bag) {
-  // This is the simple Julia write barrier; jl_gc_wb() is more accurate
-  // but requires a pointer to the originating back, too, so we go with
-  // this one for now.
-  jl_gc_wb_back((void *)bag);
+  jl_gc_wb(bag, BAG_HEADER(bag));
 }
 
 void GapRootScanner(int global, void *cache, void *sp) {
@@ -586,7 +581,6 @@ static inline Bag AllocateMasterPointer(void) {
   void *result = (void *) jl_gc_alloc(JuliaTLS,
     sizeof(void *), datatype_mptr);
   memset(result, 0, sizeof(void *));
-  keep_addr(result, 0);
   void *base = jl_pool_base_ptr(result);
   if (base != result)
     abort();
@@ -699,6 +693,7 @@ UInt ResizeBag (
         src = PTR_BAG(bag);
         memcpy(DATA(header), src, old_size < new_size ? old_size : new_size);
         SET_PTR_BAG(bag, DATA(header));
+	jl_gc_wb_back((void *)bag);
     }
     /* return success                                                      */
     return 1;

@@ -143,6 +143,7 @@ typedef struct kept_t {
 static kept_t *kept_addresses = NULL;
 
 static void keep_addr(void *addr, int kind) {
+  return;
   kept_t *kept = malloc(sizeof(kept_t));
   kept->next = kept_addresses;
   kept->addr = addr;
@@ -255,7 +256,7 @@ static void treap_insert(treap_t **treap, treap_t *val)
         R(val) = NULL;
         *treap = val;
     } else {
-        int c = cmp_ptr(val, t);
+        int c = cmp_ptr(val->addr, t->addr);
         if (c < 0) {
             treap_insert(&L(t), val);
             if (L(t)->prio > t->prio) {
@@ -330,6 +331,7 @@ void *alloc_bigval(size_t size) {
   memset(result, 0, size);
   treap_t *node = alloc_treap();
   node->addr = result;
+  node->size = size;
   node->prio = xorshift_rng();
   treap_insert(&bigvals, node);
   return result;
@@ -380,10 +382,17 @@ void *AllocateBagMemory(int type, UInt size)
 {
   // HOOK: return `size` bytes memory of TNUM `type`.
   void *result;
-  if (size <= max_pool_obj_size)
+  if (size <= max_pool_obj_size) {
     result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_bag);
-  else
+    void *base = jl_pool_base_ptr(result);
+    if (result != base)
+      abort();
+  } else {
     result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_largebag);
+    void *base = treap_find(bigvals, result);
+    if (!base)
+      abort();
+  }
   memset(result, 0, size);
   keep_addr(result, 1);
   return result;
@@ -434,8 +443,6 @@ static void TryMark(void *p)
   if (!p2)
     p2 = treap_find(bigvals, p);
   if (p2) {
-    if (!IsValidMPtr((Bag)p2))
-      abort();
     JMark(JCache, JSp, p2);
   }
 }
@@ -573,6 +580,9 @@ static inline Bag AllocateMasterPointer(void) {
     sizeof(void *), datatype_mptr);
   memset(result, 0, sizeof(void *));
   keep_addr(result, 0);
+  void *base = jl_pool_base_ptr(result);
+  if (base != result)
+    abort();
   return result;
 }
 

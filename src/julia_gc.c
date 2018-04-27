@@ -353,6 +353,7 @@ static jl_ptls_t JuliaTLS = NULL;
 static void *JCache;
 static void *JSp;
 static size_t max_pool_obj_size;
+static size_t bigval_startoffset;
 
 
 #ifndef NR_GLOBAL_BAGS
@@ -440,8 +441,11 @@ static inline void JMark(void *cache, void *sp, void *obj) {
 static void TryMark(void *p) 
 {
   jl_value_t *p2 = jl_pool_base_ptr(p);
-  if (!p2)
+  if (!p2) {
     p2 = treap_find(bigvals, p);
+    if (p2)
+      p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
+  }
   if (p2) {
     JMark(JCache, JSp, p2);
   }
@@ -513,9 +517,13 @@ void            InitBags (
     UInt                stack_align)
 {
     // HOOK: initialization happens here.
+    jl_root_scanner_hook = GapRootScanner;
+    jl_nonpool_alloc_hook = alloc_bigval;
+    jl_nonpool_free_hook = free_bigval;
     for (UInt i = 0; i < NTYPES; i++ )
 	TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();
+    JuliaTLS = jl_extend_get_ptls_states();
     // jl_gc_enable(0); /// DEBUGGING
     max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
     Module = jl_new_module(jl_symbol("ForeignGAP"));
@@ -525,15 +533,14 @@ void            InitBags (
       Module, jl_any_type, JMarkBag, NULL, 1, 0);
     datatype_largebag = jl_new_foreign_type(jl_symbol("BagInner"),
       Module, jl_any_type, JMarkBag, NULL, 1, 1);
+    void *tmp = AllocateBagMemory(T_STRING, max_pool_obj_size+1);
+    void *tmpstart = treap_find(bigvals, tmp);
+    bigval_startoffset = (char *)tmp - (char *)tmpstart;
     assert(jl_is_datatype(datatype_mptr));
     assert(jl_is_datatype(datatype_bag));
     assert(jl_is_datatype(datatype_largebag));
     GapStackBottom = stack_bottom;
     GapStackAlign = stack_align;
-    JuliaTLS = jl_extend_get_ptls_states();
-    jl_root_scanner_hook = GapRootScanner;
-    jl_nonpool_alloc_hook = alloc_bigval;
-    jl_nonpool_free_hook = free_bigval;
 }
 
 UInt CollectBags (

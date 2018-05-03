@@ -15,6 +15,9 @@
 
 #include <src/objects.h>                /* objects */
 
+#include <src/calls.h>
+#include <src/vars.h>
+
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -143,7 +146,6 @@ typedef struct kept_t {
 static kept_t *kept_addresses = NULL;
 
 static void keep_addr(void *addr, int kind) {
-  return;
   kept_t *kept = malloc(sizeof(kept_t));
   kept->next = kept_addresses;
   kept->addr = addr;
@@ -396,7 +398,7 @@ void *AllocateBagMemory(int type, UInt size)
       abort();
   }
   memset(result, 0, size);
-  keep_addr(result, 1);
+  // keep_addr(result, 1);
   return result;
 }
 
@@ -467,7 +469,7 @@ static void TryMarkRange(void *start, void *end)
 }
 
 void CHANGED_BAG(Bag bag) {
-  jl_gc_wb(bag, BAG_HEADER(bag));
+  jl_gc_wb_back(BAG_HEADER(bag));
 }
 
 void GapRootScanner(int global, void *cache, void *sp) {
@@ -589,7 +591,7 @@ static inline Bag AllocateMasterPointer(void) {
   // HOOK: Allocate memory for the master pointer.
   // Master pointers require one word of memory.
   void *result = (void *) jl_gc_alloc(JuliaTLS,
-    sizeof(void *), datatype_mptr);
+    sizeof(void *)*5, datatype_mptr);
   memset(result, 0, sizeof(void *));
   void *base = jl_pool_base_ptr(result);
   if (base != result)
@@ -653,6 +655,16 @@ Bag NewBag (
 
     /* set the masterpointer                                               */
     SET_PTR_BAG(bag, DATA(header));
+    ((UInt *)bag)[1] = size;
+    ((UInt *)bag)[2] = type;
+    if (STATE(PtrLVars)) {
+        bag[3] = (void *)CURR_FUNC();
+        if (STATE(CurrLVars) != STATE(BottomLVars)) {
+            Obj plvars = PARENT_LVARS(STATE(CurrLVars));
+            bag[4] = (void *)(FUNC_LVARS(plvars));
+        }
+    }
+
     /* return the identifier of the new bag                                */
     return bag;
 }
@@ -709,6 +721,7 @@ UInt ResizeBag (
         SET_PTR_BAG(bag, DATA(header));
 	jl_gc_wb_back((void *)bag);
     }
+    ((UInt *)bag)[1] = new_size;
     /* return success                                                      */
     return 1;
 }

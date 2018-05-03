@@ -471,6 +471,8 @@ void CHANGED_BAG(Bag bag) {
 }
 
 void GapRootScanner(int global, void *cache, void *sp) {
+  void GapVerifyRoots();
+  GapVerifyRoots();
   JCache = cache;
   JSp = sp;
   JMark(JCache, JSp, datatype_mptr);

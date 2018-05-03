@@ -143,6 +143,7 @@ typedef struct kept_t {
 static kept_t *kept_addresses = NULL;
 
 static void keep_addr(void *addr, int kind) {
+  return;
   kept_t *kept = malloc(sizeof(kept_t));
   kept->next = kept_addresses;
   kept->addr = addr;
@@ -362,6 +363,7 @@ static size_t bigval_startoffset;
 static Bag *GlobalAddr[NR_GLOBAL_BAGS];
 static const Char *GlobalCookie[NR_GLOBAL_BAGS];
 static Int GlobalCount;
+static int Verifying;
 
 
 
@@ -394,6 +396,7 @@ void *AllocateBagMemory(int type, UInt size)
       abort();
   }
   memset(result, 0, size);
+  keep_addr(result, 1);
   return result;
 }
 
@@ -420,13 +423,13 @@ static int IsValidPtr(void *p) {
       || treap_find(bigvals, p) != NULL;
 }
 
-static int IsValidBag(void *bag) {
+int IsValidBag(void *bag) {
   uintptr_t *contents = (uintptr_t *) bag;
   return (contents[-1] ^ (uintptr_t) datatype_bag) < 4
       || (contents[-1] ^ (uintptr_t) datatype_largebag) < 4;
 }
 
-static int IsValidMPtr(Bag bag) {
+int IsValidMPtr(Bag bag) {
   uintptr_t *contents = (uintptr_t *) bag;
   return (contents[-1] ^ (uintptr_t) datatype_mptr) < 4;
 }
@@ -513,6 +516,9 @@ void            InitBags (
 {
     // HOOK: initialization happens here.
     jl_root_scanner_hook = GapRootScanner;
+    jl_gc_disable_generational = 1;
+    void GapVerifyRoots();
+    jl_post_gc_hook = GapVerifyRoots;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;
     for (UInt i = 0; i < NTYPES; i++ )
@@ -584,6 +590,7 @@ static inline Bag AllocateMasterPointer(void) {
   void *base = jl_pool_base_ptr(result);
   if (base != result)
     abort();
+  keep_addr(result, 0);
   return result;
 }
 
@@ -595,8 +602,6 @@ Bag NewBag (
     UInt                alloc_size;
 
     alloc_size = sizeof(BagHeader) + size;
-    bag = AllocateMasterPointer();
-
     SizeAllBags             += size;
 
     /* If the size of an object is zero (such as an empty permutation),
@@ -636,6 +641,9 @@ Bag NewBag (
     header->type = type;
     header->flags = 0;
     header->size = size;
+
+    bag = AllocateMasterPointer();
+
 
     /* set the masterpointer                                               */
     SET_PTR_BAG(bag, DATA(header));
@@ -736,11 +744,72 @@ void SwapMasterPoint( Bag bag1, Bag bag2 )
 
 // HOOK: mark functions
 
+static treap_t *VerifyStack;
+
+#define VERIFYING 16
+
+static void PushBag(Bag bag) {
+  switch (Verifying) {
+  case 1:
+    if (TEST_OBJ_FLAG(bag, VERIFYING)) return;
+    SET_OBJ_FLAG(bag, VERIFYING);
+    break;
+  case 2:
+    if (!TEST_OBJ_FLAG(bag, VERIFYING)) return;
+    CLEAR_OBJ_FLAG(bag, VERIFYING);
+    break;
+  }
+  treap_t *node = alloc_treap();
+  node->right = VerifyStack;
+  VerifyStack = node;
+  node->addr = bag;
+}
+
+static Bag PopBag() {
+  if (!VerifyStack) return NULL;
+  Bag result = VerifyStack->addr;
+  void *head = VerifyStack;
+  VerifyStack = VerifyStack->right;
+  free_treap(head);
+  return result;
+}
+
+static void VerifyRoots() {
+  for (Int i = 0; i < GlobalCount; i++) {
+    Bag p = *GlobalAddr[i];
+    if (IS_BAG_REF(p))
+      PushBag(p);
+  }
+  while (VerifyStack) {
+    Bag bag = PopBag();
+    if (!IsValidMPtr(bag))
+      abort();
+    void *p = BAG_HEADER(bag);
+    if (!p) continue;
+    if (!IsValidBag(p))
+      abort();
+    TabMarkFuncBags[TNUM_OBJ(bag)](bag);
+  }
+}
+
+void GapVerifyRoots() {
+  Verifying = 1;
+  VerifyRoots();
+  Verifying = 2;
+  VerifyRoots();
+  Verifying = 0;
+}
+
+
 inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
+        if (Verifying) {
+	  PushBag(bag);
+	  return;
+	}
         void *p = jl_pool_base_ptr(bag);
-        if (p) {
+        if (p == bag) {
 	  if (!IsValidMPtr(p))
 	    abort();
 	  JMark(JCache, JSp, p);
@@ -787,7 +856,7 @@ void MarkAllSubBags(Bag bag)
 void MarkBagWeakly( Bag bag )
 {
     // TODO: implement proper weak pointers
-    MarkAllSubBags(bag);
+    if (IS_BAG_REF(bag)) MarkAllSubBags(bag);
 }
 
 void JMarkBag(void *cache, void *sp, void *obj)

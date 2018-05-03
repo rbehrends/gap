@@ -581,6 +581,8 @@ void            RetypeBag (
     header->type = new_type;
 }
 
+static void *MinMPtr, *MaxMPtr;
+
 static inline Bag AllocateMasterPointer(void) {
   // HOOK: Allocate memory for the master pointer.
   // Master pointers require one word of memory.
@@ -591,6 +593,8 @@ static inline Bag AllocateMasterPointer(void) {
   if (base != result)
     abort();
   keep_addr(result, 0);
+  if (MinMPtr && lt_ptr(result, MinMPtr)) MinMPtr = result;
+  if (MaxMPtr && gt_ptr(result, MaxMPtr)) MaxMPtr = result;
   return result;
 }
 
@@ -805,6 +809,7 @@ inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
         if (Verifying) {
+	  if (lt_ptr(bag, MinMPtr) || gt_ptr(bag, MaxMPtr)) return;
 	  PushBag(bag);
 	  return;
 	}

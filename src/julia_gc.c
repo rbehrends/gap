@@ -451,6 +451,8 @@ static void TryMark(void *p)
   }
   if (p2) {
     JMark(JCache, JSp, p2);
+    if (IsValidMPtr((Bag)p2))
+      JMark(JCache, JSp, BAG_HEADER((void *)p2));
   }
 }
 
@@ -486,8 +488,11 @@ void GapRootScanner(int global, void *cache, void *sp) {
   TryMarkRange(registers + sizeof(syJmp_buf), GapStackBottom);
   for (Int i = 0; i < GlobalCount; i++) {
     Bag p = *GlobalAddr[i];
-    if (IS_BAG_REF(p))
+    if (IS_BAG_REF(p)) {
       JMark(JCache, JSp, p);
+      if (PTR_BAG(p))
+	JMark(JCache, JSp, BAG_HEADER(p));
+    }
   }
   for (kept_t *k = kept_addresses; k; k = k->next) {
     void *addr = k->addr;

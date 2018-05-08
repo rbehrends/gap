@@ -109,7 +109,6 @@ static inline int gt_ptr(void *a, void *b)
     return (uintptr_t) a > (uintptr_t) b;
 }
 
-#if 0
 static inline void *max_ptr(void *a, void *b)
 {
     if ((uintptr_t) a > (uintptr_t) b)
@@ -125,7 +124,6 @@ static inline void *min_ptr(void *a, void *b)
     else
         return b;
 }
-#endif
 
 /* align pointer to full word if mis-aligned */
 static inline void *align_ptr(void *p)
@@ -366,6 +364,7 @@ static Bag *GlobalAddr[NR_GLOBAL_BAGS];
 static const Char *GlobalCookie[NR_GLOBAL_BAGS];
 static Int GlobalCount;
 static int Verifying;
+static int VerboseDebug = 0;
 
 
 
@@ -474,8 +473,12 @@ void CHANGED_BAG(Bag bag) {
   jl_gc_wb_back(BAG_HEADER(bag));
 }
 
+static void GapVerifyRoots();
+static void SaveStack();
+static void FreeStack();
+
 void GapRootScanner(int global, void *cache, void *sp) {
-  void GapVerifyRoots();
+  SaveStack();
   GapVerifyRoots();
   JCache = cache;
   JSp = sp;
@@ -505,6 +508,11 @@ void GapRootScanner(int global, void *cache, void *sp) {
   }
 }
 
+void GapPostGC() {
+  GapVerifyRoots();
+  FreeStack();
+}
+
 static jl_module_t * Module;
 
 void JMarkMPtr(void *cache, void *sp, void *obj) {
@@ -523,11 +531,11 @@ void            InitBags (
     Bag *               stack_bottom,
     UInt                stack_align)
 {
+    VerboseDebug = getenv("GAP_DEBUG_JULIA_GC") != NULL;
     // HOOK: initialization happens here.
     jl_root_scanner_hook = GapRootScanner;
     jl_gc_disable_generational = 1;
-    void GapVerifyRoots();
-    jl_post_gc_hook = GapVerifyRoots;
+    jl_post_gc_hook = GapPostGC;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;
     for (UInt i = 0; i < NTYPES; i++ )
@@ -726,7 +734,7 @@ UInt ResizeBag (
         SET_PTR_BAG(bag, DATA(header));
 	jl_gc_wb_back((void *)bag);
     }
-    ((UInt *)bag)[1] = new_size;
+    ((Int *)bag)[1] = -new_size;
     /* return success                                                      */
     return 1;
 }
@@ -798,12 +806,54 @@ static Bag PopBag() {
   return result;
 }
 
+static void TryVerify(void *p) 
+{
+  jl_value_t *p2 = jl_pool_base_ptr(p);
+  if (!p2) {
+    p2 = treap_find(bigvals, p);
+    if (p2)
+      p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
+  }
+  if (p2) {
+    if (IsValidMPtr((Bag) p2)) {
+      PushBag((Bag) p2);
+    } else if (IsValidBag(p2)) {
+      TabMarkFuncBags[TNUM_OBJ((Bag) &p2)]((Bag) &p2);
+    }
+  }
+}
+
+static void TryVerifyRange(void *start, size_t len)
+{
+  void *end = (char *) start + len;
+  if (gt_ptr(start, end)) {
+    void *t = start;
+    start = end;
+    end = t;
+  }
+  void **p = align_ptr(start);
+  while (lt_ptr(p, end)) {
+    TryVerify(*p);
+    p++;
+  }
+}
+
+typedef struct {
+  syJmp_buf registers;
+  size_t stacklen;
+  void *stack[1];
+} StackImage;
+
+StackImage *LastStack;
+
 static void VerifyRoots() {
   for (Int i = 0; i < GlobalCount; i++) {
     Bag p = *GlobalAddr[i];
     if (IS_BAG_REF(p))
       PushBag(p);
   }
+  TryVerifyRange(LastStack->registers, sizeof(syJmp_buf));
+  TryVerifyRange(LastStack->stack, LastStack->stacklen);
   while (VerifyStack) {
     Bag bag = PopBag();
     if (!IsValidMPtr(bag))
@@ -816,7 +866,38 @@ static void VerifyRoots() {
   }
 }
 
-void GapVerifyRoots() {
+static void SaveStack() {
+  char here[sizeof(void *)];
+  char *start = min_ptr(here, GapStackBottom);
+  char *end = max_ptr(here, GapStackBottom);
+  size_t stacklen = end - start;
+  LastStack = malloc(stacklen + sizeof(StackImage) - sizeof(void *));
+  sySetjmp(LastStack->registers);
+  LastStack->stacklen = stacklen;
+  memcpy(LastStack->stack, start, stacklen);
+}
+
+static void FreeStack() {
+  free(LastStack);
+  LastStack = NULL;
+}
+
+
+static void GapVerifyRoots() {
+  long invalid = 0;
+  long state[4] = { 0, 0, 0, 0 };
+  if (VerboseDebug) {
+    for (kept_t *k = kept_addresses; k; k = k->next) {
+      Bag bag = k->addr;
+      state[bag[0][-2]&3]++;
+      if (!IsValidBag(BAG_HEADER(bag))) {
+	invalid++;
+	printf("%s %ld\n", TNAM_OBJ(bag), (long) (((Int *)bag)[1]));
+      }
+    }
+    // printf("INVALID: %ld\n", invalid);
+    // printf("GC State: %ld %ld %ld %ld\n", state[0], state[1], state[2], state[3]);
+  }
   Verifying = 1;
   VerifyRoots();
   Verifying = 2;

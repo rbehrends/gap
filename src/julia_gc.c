@@ -499,10 +499,13 @@ void GapRootScanner(int global, void *cache, void *sp) {
   }
   for (Bag frame = STATE(CurrLVars); frame; frame = PARENT_LVARS(frame))
   {
-    if (IS_BAG_REF(frame)) {
-      JMark(JCache, JSp, frame);
-      if (PTR_BAG(frame))
-	JMark(JCache, JSp, BAG_HEADER(frame));
+    JMark(JCache, JSp, frame);
+    JMark(JCache, JSp, BAG_HEADER(frame));
+    Bag func = FUNC_LVARS(frame);
+    if (NARG_FUNC(func) < 0) {
+      Obj args = OBJ_LVAR_WITH_CONTEXT(frame, -NARG_FUNC(func));
+      JMark(JCache, JSp, args);
+      JMark(JCache, JSp, BAG_HEADER(args));
     }
   }
   for (kept_t *k = kept_addresses; k; k = k->next) {

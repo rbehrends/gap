@@ -497,6 +497,14 @@ void GapRootScanner(int global, void *cache, void *sp) {
 	JMark(JCache, JSp, BAG_HEADER(p));
     }
   }
+  for (Bag frame = STATE(CurrLVars); frame; frame = PARENT_LVARS(frame))
+  {
+    if (IS_BAG_REF(frame)) {
+      JMark(JCache, JSp, frame);
+      if (PTR_BAG(frame))
+	JMark(JCache, JSp, BAG_HEADER(frame));
+    }
+  }
   for (kept_t *k = kept_addresses; k; k = k->next) {
     void *addr = k->addr;
     if (k->kind == 0 && !*(Bag)addr) continue;

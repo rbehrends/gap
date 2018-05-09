@@ -19,6 +19,7 @@
 #include <src/vars.h>
 #include <src/funcs.h>
 #include <src/plist.h>
+#include <src/stringobj.h>
 
 
 #include <stdlib.h>
@@ -485,10 +486,16 @@ static void MarkStackFrames(Bag frame) {
     JMark(JCache, JSp, frame);
     JMark(JCache, JSp, BAG_HEADER(frame));
     Bag func = FUNC_LVARS(frame);
-    if (NARG_FUNC(func) < 0) {
-      Obj args = OBJ_LVAR_WITH_CONTEXT(frame, -NARG_FUNC(func));
-      JMark(JCache, JSp, args);
-      JMark(JCache, JSp, BAG_HEADER(args));
+    Int n = NARG_FUNC(func);
+    if (n < 0) n = -n;
+    n += NLOC_FUNC(func);
+    for (Int i = 1; i <= n; i++) {
+      Bag lvar = OBJ_LVAR_WITH_CONTEXT(frame, i);
+      if (IS_BAG_REF(lvar)) {
+	JMark(JCache, JSp, lvar);
+	if (PTR_BAG(lvar))
+	  JMark(JCache, JSp, BAG_HEADER(lvar));
+      }
     }
   }
 }

@@ -17,6 +17,8 @@
 
 #include <src/calls.h>
 #include <src/vars.h>
+#include <src/funcs.h>
+#include <src/plist.h>
 
 
 #include <stdlib.h>
@@ -477,6 +479,20 @@ static void GapVerifyRoots();
 static void SaveStack();
 static void FreeStack();
 
+static void MarkStackFrames(Bag frame) {
+  for (; frame; frame = PARENT_LVARS(frame))
+  {
+    JMark(JCache, JSp, frame);
+    JMark(JCache, JSp, BAG_HEADER(frame));
+    Bag func = FUNC_LVARS(frame);
+    if (NARG_FUNC(func) < 0) {
+      Obj args = OBJ_LVAR_WITH_CONTEXT(frame, -NARG_FUNC(func));
+      JMark(JCache, JSp, args);
+      JMark(JCache, JSp, BAG_HEADER(args));
+    }
+  }
+}
+
 void GapRootScanner(int global, void *cache, void *sp) {
   SaveStack();
   GapVerifyRoots();
@@ -497,16 +513,11 @@ void GapRootScanner(int global, void *cache, void *sp) {
 	JMark(JCache, JSp, BAG_HEADER(p));
     }
   }
-  for (Bag frame = STATE(CurrLVars); frame; frame = PARENT_LVARS(frame))
+  MarkStackFrames(STATE(CurrLVars));
+  for (Bag execState = CurrExecState(); execState;
+       execState = ELM_PLIST(execState, 1))
   {
-    JMark(JCache, JSp, frame);
-    JMark(JCache, JSp, BAG_HEADER(frame));
-    Bag func = FUNC_LVARS(frame);
-    if (NARG_FUNC(func) < 0) {
-      Obj args = OBJ_LVAR_WITH_CONTEXT(frame, -NARG_FUNC(func));
-      JMark(JCache, JSp, args);
-      JMark(JCache, JSp, BAG_HEADER(args));
-    }
+    MarkStackFrames(ELM_PLIST(execState, 2));
   }
   for (kept_t *k = kept_addresses; k; k = k->next) {
     void *addr = k->addr;

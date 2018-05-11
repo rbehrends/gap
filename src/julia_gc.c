@@ -501,8 +501,8 @@ static void MarkStackFrames(Bag frame) {
 }
 
 void GapRootScanner(int global, void *cache, void *sp) {
-  SaveStack();
-  GapVerifyRoots();
+  // SaveStack();
+  // GapVerifyRoots();
   JCache = cache;
   JSp = sp;
   JMark(JCache, JSp, datatype_mptr);
@@ -540,8 +540,8 @@ void GapRootScanner(int global, void *cache, void *sp) {
 }
 
 void GapPostGC() {
-  GapVerifyRoots();
-  FreeStack();
+  // GapVerifyRoots();
+  // FreeStack();
 }
 
 static inline int GcOld(void *p) {

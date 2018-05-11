@@ -15,12 +15,9 @@
 
 #include <src/objects.h>                /* objects */
 
-#include <src/calls.h>
 #include <src/vars.h>
 #include <src/funcs.h>
 #include <src/plist.h>
-#include <src/stringobj.h>
-
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -112,6 +109,7 @@ static inline int gt_ptr(void *a, void *b)
     return (uintptr_t) a > (uintptr_t) b;
 }
 
+#if 0
 static inline void *max_ptr(void *a, void *b)
 {
     if ((uintptr_t) a > (uintptr_t) b)
@@ -127,6 +125,7 @@ static inline void *min_ptr(void *a, void *b)
     else
         return b;
 }
+#endif
 
 /* align pointer to full word if mis-aligned */
 static inline void *align_ptr(void *p)
@@ -134,31 +133,6 @@ static inline void *align_ptr(void *p)
     uintptr_t u = (uintptr_t) p;
     u &= ~(sizeof(p)-1);
     return (void *)u;
-}
-
-// keep additional roots if necessary
-
-typedef struct kept_t {
-  struct kept_t *next;
-  void *addr;
-  int kind;
-} kept_t;
-
-static kept_t *kept_addresses = NULL;
-
-static void keep_addr(void *addr, int kind) {
-  kept_t *kept = malloc(sizeof(kept_t));
-  kept->next = kept_addresses;
-  kept->addr = addr;
-  kept->kind = kind;
-  kept_addresses = kept;
-}
-
-int is_kept_addr(void *addr) {
-  for (kept_t *k = kept_addresses; k; k = k->next) {
-    if (k->addr == addr) return 1;
-  }
-  return 0;
 }
 
 typedef struct treap_t {
@@ -347,6 +321,7 @@ void free_bigval(void *p) {
   }
 }
 
+static jl_module_t *Module;
 static jl_datatype_t *datatype_mptr;
 static jl_datatype_t *datatype_bag;
 static jl_datatype_t *datatype_largebag;
@@ -366,8 +341,6 @@ static size_t bigval_startoffset;
 static Bag *GlobalAddr[NR_GLOBAL_BAGS];
 static const Char *GlobalCookie[NR_GLOBAL_BAGS];
 static Int GlobalCount;
-static int Verifying;
-static int VerboseDebug = 0;
 
 
 
@@ -390,17 +363,10 @@ void *AllocateBagMemory(int type, UInt size)
   void *result;
   if (size <= max_pool_obj_size) {
     result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_bag);
-    void *base = jl_pool_base_ptr(result);
-    if (result != base)
-      abort();
   } else {
     result = (void *) jl_gc_alloc(JuliaTLS, size, datatype_largebag);
-    void *base = treap_find(bigvals, result);
-    if (!base)
-      abort();
   }
   memset(result, 0, size);
-  // keep_addr(result, 1);
   return result;
 }
 
@@ -421,23 +387,6 @@ void InitSweepFuncBags (
   // HOOK: set sweep function for type `type`.
   // This is intended for weak pointer objects.
 }
-
-static int IsValidPtr(void *p) {
-  return jl_pool_base_ptr(p) != NULL
-      || treap_find(bigvals, p) != NULL;
-}
-
-int IsValidBag(void *bag) {
-  uintptr_t *contents = (uintptr_t *) bag;
-  return (contents[-1] ^ (uintptr_t) datatype_bag) < 4
-      || (contents[-1] ^ (uintptr_t) datatype_largebag) < 4;
-}
-
-int IsValidMPtr(Bag bag) {
-  uintptr_t *contents = (uintptr_t *) bag;
-  return (contents[-1] ^ (uintptr_t) datatype_mptr) < 4;
-}
-
 
 static inline int JMark(void *cache, void *sp, void *obj) {
   return jl_gc_mark_queue_obj(cache, sp, obj);
@@ -474,37 +423,18 @@ void CHANGED_BAG(Bag bag) {
   jl_gc_wb_back(BAG_HEADER(bag));
 }
 
-static void GapVerifyRoots();
-static void SaveStack();
-static void FreeStack();
-
 static void MarkStackFrames(Bag frame) {
   for (; frame; frame = PARENT_LVARS(frame))
   {
     JMark(JCache, JSp, frame);
     JMark(JCache, JSp, BAG_HEADER(frame));
-#if 0
-    Bag func = FUNC_LVARS(frame);
-    Int n = NARG_FUNC(func);
-    if (n < 0) n = -n;
-    n += NLOC_FUNC(func);
-    for (Int i = 1; i <= n; i++) {
-      Bag lvar = OBJ_LVAR_WITH_CONTEXT(frame, i);
-      if (IS_BAG_REF(lvar)) {
-	JMark(JCache, JSp, lvar);
-	if (PTR_BAG(lvar))
-	  JMark(JCache, JSp, BAG_HEADER(lvar));
-      }
-    }
-#endif
   }
 }
 
 void GapRootScanner(int global, void *cache, void *sp) {
-  // SaveStack();
-  // GapVerifyRoots();
   JCache = cache;
   JSp = sp;
+  JMark(JCache, JSp, Module);
   JMark(JCache, JSp, datatype_mptr);
   JMark(JCache, JSp, datatype_bag);
   JMark(JCache, JSp, datatype_largebag);
@@ -516,10 +446,6 @@ void GapRootScanner(int global, void *cache, void *sp) {
     Bag p = *GlobalAddr[i];
     if (IS_BAG_REF(p)) {
       JMark(JCache, JSp, p);
-#if 0
-      if (PTR_BAG(p))
-        JMark(JCache, JSp, BAG_HEADER(p));
-#endif
     }
   }
   MarkStackFrames(STATE(CurrLVars));
@@ -528,32 +454,14 @@ void GapRootScanner(int global, void *cache, void *sp) {
   {
     MarkStackFrames(ELM_PLIST(execState, 2));
   }
-  for (kept_t *k = kept_addresses; k; k = k->next) {
-    void *addr = k->addr;
-    if (k->kind == 0 && !*(Bag)addr) continue;
-    if (k->kind == 0 && !IsValidMPtr(addr))
-      abort();
-    if (k->kind == 1 && !IsValidBag(addr))
-      abort();
-    JMark(JCache, JSp, k->addr);
-  }
-}
-
-void GapPostGC() {
-  // GapVerifyRoots();
-  // FreeStack();
 }
 
 static inline int GcOld(void *p) {
   return (jl_astaggedvalue(p)->bits.gc & 2) != 0;
 }
 
-static jl_module_t * Module;
-
 void JMarkMPtr(void *cache, void *sp, void *obj) {
   if (!*(void **)obj) return;
-  if (!IsValidBag(BAG_HEADER(obj)))
-    abort();
   if (JMark(cache, sp, BAG_HEADER(obj)) && GcOld(obj))
     jl_gc_mark_push_remset(JuliaTLS, obj, 1);
 }
@@ -567,11 +475,9 @@ void            InitBags (
     Bag *               stack_bottom,
     UInt                stack_align)
 {
-    VerboseDebug = getenv("GAP_DEBUG_JULIA_GC") != NULL;
     // HOOK: initialization happens here.
     jl_root_scanner_hook = GapRootScanner;
     jl_gc_disable_generational = 0;
-    jl_post_gc_hook = GapPostGC;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;
     for (UInt i = 0; i < NTYPES; i++ )
@@ -590,9 +496,9 @@ void            InitBags (
     void *tmp = AllocateBagMemory(T_STRING, max_pool_obj_size+1);
     void *tmpstart = treap_find(bigvals, tmp);
     bigval_startoffset = (char *)tmp - (char *)tmpstart;
-    assert(jl_is_datatype(datatype_mptr));
-    assert(jl_is_datatype(datatype_bag));
-    assert(jl_is_datatype(datatype_largebag));
+    GAP_ASSERT(jl_is_datatype(datatype_mptr));
+    GAP_ASSERT(jl_is_datatype(datatype_bag));
+    GAP_ASSERT(jl_is_datatype(datatype_largebag));
     GapStackBottom = stack_bottom;
     GapStackAlign = stack_align;
 }
@@ -634,20 +540,12 @@ void            RetypeBag (
     header->type = new_type;
 }
 
-static void *MinMPtr, *MaxMPtr;
-
 static inline Bag AllocateMasterPointer(void) {
   // HOOK: Allocate memory for the master pointer.
   // Master pointers require one word of memory.
   void *result = (void *) jl_gc_alloc(JuliaTLS,
-    sizeof(void *)*5, datatype_mptr);
+    sizeof(void *), datatype_mptr);
   memset(result, 0, sizeof(void *));
-  void *base = jl_pool_base_ptr(result);
-  if (base != result)
-    abort();
-  // keep_addr(result, 0);
-  if (MinMPtr && lt_ptr(result, MinMPtr)) MinMPtr = result;
-  if (MaxMPtr && gt_ptr(result, MaxMPtr)) MaxMPtr = result;
   return result;
 }
 
@@ -659,6 +557,7 @@ Bag NewBag (
     UInt                alloc_size;
 
     alloc_size = sizeof(BagHeader) + size;
+
     SizeAllBags             += size;
 
     /* If the size of an object is zero (such as an empty permutation),
@@ -701,17 +600,8 @@ Bag NewBag (
 
     bag = AllocateMasterPointer();
 
-
     /* set the masterpointer                                               */
     SET_PTR_BAG(bag, DATA(header));
-    ((UInt *)bag)[1] = size;
-    ((UInt *)bag)[2] = type;
-    if (STATE(PtrLVars)) {
-        bag[3] = (void *)CURR_FUNC();
-	UInt line = LINE_STAT(STAT_LVARS_PTR(STATE(PtrLVars)));
-	((UInt *)bag)[4] = line;
-    }
-
     /* return the identifier of the new bag                                */
     return bag;
 }
@@ -768,7 +658,6 @@ UInt ResizeBag (
         SET_PTR_BAG(bag, DATA(header));
 	jl_gc_wb_back((void *)bag);
     }
-    ((Int *)bag)[1] = -new_size;
     /* return success                                                      */
     return 1;
 }
@@ -810,150 +699,14 @@ void SwapMasterPoint( Bag bag1, Bag bag2 )
 
 // HOOK: mark functions
 
-static treap_t *VerifyStack;
-
-#define VERIFYING 16
-
-static void PushBag(Bag bag) {
-  switch (Verifying) {
-  case 1:
-    if (TEST_OBJ_FLAG(bag, VERIFYING)) return;
-    SET_OBJ_FLAG(bag, VERIFYING);
-    break;
-  case 2:
-    if (!TEST_OBJ_FLAG(bag, VERIFYING)) return;
-    CLEAR_OBJ_FLAG(bag, VERIFYING);
-    break;
-  }
-  treap_t *node = alloc_treap();
-  node->right = VerifyStack;
-  VerifyStack = node;
-  node->addr = bag;
-}
-
-static Bag PopBag() {
-  if (!VerifyStack) return NULL;
-  Bag result = VerifyStack->addr;
-  void *head = VerifyStack;
-  VerifyStack = VerifyStack->right;
-  free_treap(head);
-  return result;
-}
-
-static void TryVerify(void *p) 
-{
-  jl_value_t *p2 = jl_pool_base_ptr(p);
-  if (!p2) {
-    p2 = treap_find(bigvals, p);
-    if (p2)
-      p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
-  }
-  if (p2) {
-    if (IsValidMPtr((Bag) p2)) {
-      PushBag((Bag) p2);
-    } else if (IsValidBag(p2)) {
-      TabMarkFuncBags[TNUM_OBJ((Bag) &p2)]((Bag) &p2);
-    }
-  }
-}
-
-static void TryVerifyRange(void *start, size_t len)
-{
-  void *end = (char *) start + len;
-  if (gt_ptr(start, end)) {
-    void *t = start;
-    start = end;
-    end = t;
-  }
-  void **p = align_ptr(start);
-  while (lt_ptr(p, end)) {
-    TryVerify(*p);
-    p++;
-  }
-}
-
-typedef struct {
-  syJmp_buf registers;
-  size_t stacklen;
-  void *stack[1];
-} StackImage;
-
-StackImage *LastStack;
-
-static void VerifyRoots() {
-  for (Int i = 0; i < GlobalCount; i++) {
-    Bag p = *GlobalAddr[i];
-    if (IS_BAG_REF(p))
-      PushBag(p);
-  }
-  TryVerifyRange(LastStack->registers, sizeof(syJmp_buf));
-  TryVerifyRange(LastStack->stack, LastStack->stacklen);
-  while (VerifyStack) {
-    Bag bag = PopBag();
-    if (!IsValidMPtr(bag))
-      abort();
-    void *p = BAG_HEADER(bag);
-    if (!p) continue;
-    if (!IsValidBag(p))
-      abort();
-    TabMarkFuncBags[TNUM_OBJ(bag)](bag);
-  }
-}
-
-static void SaveStack() {
-  char here[sizeof(void *)];
-  char *start = min_ptr(here, GapStackBottom);
-  char *end = max_ptr(here, GapStackBottom);
-  size_t stacklen = end - start;
-  LastStack = malloc(stacklen + sizeof(StackImage) - sizeof(void *));
-  sySetjmp(LastStack->registers);
-  LastStack->stacklen = stacklen;
-  memcpy(LastStack->stack, start, stacklen);
-}
-
-static void FreeStack() {
-  free(LastStack);
-  LastStack = NULL;
-}
-
-
-static void GapVerifyRoots() {
-  long invalid = 0;
-  long state[4] = { 0, 0, 0, 0 };
-  if (VerboseDebug) {
-    for (kept_t *k = kept_addresses; k; k = k->next) {
-      Bag bag = k->addr;
-      state[bag[0][-2]&3]++;
-      if (!IsValidBag(BAG_HEADER(bag))) {
-	invalid++;
-	printf("%s %ld\n", TNAM_OBJ(bag), (long) (((Int *)bag)[1]));
-      }
-    }
-    // printf("INVALID: %ld\n", invalid);
-    // printf("GC State: %ld %ld %ld %ld\n", state[0], state[1], state[2], state[3]);
-  }
-  Verifying = 1;
-  VerifyRoots();
-  Verifying = 2;
-  VerifyRoots();
-  Verifying = 0;
-}
-
 static UInt YoungRef;
 static int OldObj;
 
 inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
-        if (Verifying) {
-	  if (lt_ptr(bag, MinMPtr) || gt_ptr(bag, MaxMPtr)) return;
-	  PushBag(bag);
-	  return;
-	}
         void *p = jl_pool_base_ptr(bag);
         if (p == bag) {
-	  if (!IsValidMPtr(p))
-	    abort();
 	  if (JMark(JCache, JSp, p) && OldObj)
 	    YoungRef++;
 	}

@@ -9,22 +9,18 @@
 **  and gasman.c for two other garbage collector implementations.
 **/
 
-#include <src/system.h> /* Ints, UInts */
-#include <src/gapstate.h>
-
-#include <src/gasman.h> /* garbage collector */
-
-#include <src/objects.h> /* objects */
-
-#include <src/vars.h>
+#include <src/code.h>
 #include <src/funcs.h>
+#include <src/gapstate.h>
+#include <src/gasman.h>
+#include <src/objects.h>
 #include <src/plist.h>
+#include <src/system.h>
+#include <src/vars.h>
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-
-#include <src/code.h> /* coder */
 
 #include "julia.h"
 #include "gcext.h"

@@ -340,6 +340,9 @@ static void *          JCache;
 static void *          JSp;
 static size_t          max_pool_obj_size;
 static size_t          bigval_startoffset;
+static UInt            YoungRef;
+static int             OldObj;
+
 
 
 #ifndef NR_GLOBAL_BAGS
@@ -439,22 +442,36 @@ static void MarkStackFrames(void * cache, void * sp, Bag frame)
 
 void GapRootScanner(int global, void * cache, void * sp)
 {
+    // setup globals for use in MarkBag and GAP marking functions
     JCache = cache;
     JSp = sp;
+
+    // que the Julia objects we allocated (the module, and
+    // our custom datatypes)
     JMark(cache, sp, Module);
     JMark(cache, sp, datatype_mptr);
     JMark(cache, sp, datatype_bag);
     JMark(cache, sp, datatype_largebag);
+
+    // scan the stack for further object references, and mark them
     syJmp_buf registers;
     sySetjmp(registers);
     TryMarkRange(cache, sp, registers, (char *)registers + sizeof(syJmp_buf));
     TryMarkRange(cache, sp, (char *)registers + sizeof(syJmp_buf), GapStackBottom);
+
+    // mark all global objects
     for (Int i = 0; i < GlobalCount; i++) {
         Bag p = *GlobalAddr[i];
         if (IS_BAG_REF(p)) {
             JMark(cache, sp, p);
         }
     }
+
+    // scan the GAP call stack, too
+    // FIXME: is this really necessary? STATE(CurrLVars) is already marked as
+    // a global object (via GlobalAddr above), and it is the head of a linked
+    // list containing the others, so it should not be necessary (and a quick
+    // test confirms this
     MarkStackFrames(cache, sp, STATE(CurrLVars));
     for (Bag execState = CurrExecState(); execState;
          execState = ELM_PLIST(execState, 1)) {
@@ -462,12 +479,16 @@ void GapRootScanner(int global, void * cache, void * sp)
     }
 }
 
+// helper function to test if Julia considers an object to
+// be in the old generation
 static inline int GcOld(void * p)
 {
     return (jl_astaggedvalue(p)->bits.gc & 2) != 0;
 }
 
-void JMarkMPtr(void * cache, void * sp, void * obj)
+// the Julia marking function for master pointer objects (i.e., this function
+// is called by the Julia GC whenever it marks a GAP master pointer object)
+static void JMarkMPtr(void * cache, void * sp, void * obj)
 {
     if (!*(void **)obj)
         return;
@@ -475,7 +496,21 @@ void JMarkMPtr(void * cache, void * sp, void * obj)
         jl_gc_mark_push_remset(JuliaTLS, obj, 1);
 }
 
-void JMarkBag(void * cache, void * sp, void * obj);
+// the Julia marking function for bags (i.e., this function is called by the
+// Julia GC whenever it marks a GAP bag object)
+static void JMarkBag(void * cache, void * sp, void * obj)
+{
+    JCache = cache;
+    JSp = sp;
+    BagHeader * hdr = (BagHeader *)obj;
+    Bag         contents = (Bag)(hdr + 1);
+    UInt        tnum = hdr->type;
+    YoungRef = 0;
+    OldObj = GcOld(obj);
+    TabMarkFuncBags[tnum]((Bag)&contents);
+    if (OldObj && YoungRef)
+        jl_gc_mark_push_remset(JuliaTLS, obj, YoungRef);
+}
 
 
 void InitBags(UInt              initial_size,
@@ -596,12 +631,6 @@ UInt ResizeBag(Bag bag, UInt new_size)
     Bag * src;      /* source in copying               */
     UInt  alloc_size;
 
-    /* check the size                                                      */
-
-#ifdef TREMBLE_HEAP
-    CollectBags(0, 0);
-#endif
-
     BagHeader * header = BAG_HEADER(bag);
 
     /* get type and old size of the bag                                    */
@@ -666,9 +695,6 @@ void SwapMasterPoint(Bag bag1, Bag bag2)
 
 // HOOK: mark functions
 
-static UInt YoungRef;
-static int  OldObj;
-
 inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
@@ -727,16 +753,3 @@ void MarkBagWeakly(Bag bag)
     MarkBag(bag);
 }
 
-void JMarkBag(void * cache, void * sp, void * obj)
-{
-    JCache = cache;
-    JSp = sp;
-    BagHeader * hdr = (BagHeader *)obj;
-    Bag         contents = (Bag)(hdr + 1);
-    UInt        tnum = hdr->type;
-    YoungRef = 0;
-    OldObj = GcOld(obj);
-    TabMarkFuncBags[tnum]((Bag)&contents);
-    if (OldObj && YoungRef)
-        jl_gc_mark_push_remset(JuliaTLS, obj, YoungRef);
-}

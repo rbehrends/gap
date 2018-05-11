@@ -439,8 +439,8 @@ int IsValidMPtr(Bag bag) {
 }
 
 
-static inline void JMark(void *cache, void *sp, void *obj) {
-  jl_gc_mark_queue_obj(cache, sp, obj);
+static inline int JMark(void *cache, void *sp, void *obj) {
+  return jl_gc_mark_queue_obj(cache, sp, obj);
 }
 
 static void TryMark(void *p) 
@@ -453,8 +453,6 @@ static void TryMark(void *p)
   }
   if (p2) {
     JMark(JCache, JSp, p2);
-    if (IsValidMPtr((Bag)p2))
-      JMark(JCache, JSp, BAG_HEADER((void *)p2));
   }
 }
 
@@ -485,6 +483,7 @@ static void MarkStackFrames(Bag frame) {
   {
     JMark(JCache, JSp, frame);
     JMark(JCache, JSp, BAG_HEADER(frame));
+#if 0
     Bag func = FUNC_LVARS(frame);
     Int n = NARG_FUNC(func);
     if (n < 0) n = -n;
@@ -497,6 +496,7 @@ static void MarkStackFrames(Bag frame) {
 	  JMark(JCache, JSp, BAG_HEADER(lvar));
       }
     }
+#endif
   }
 }
 
@@ -516,8 +516,10 @@ void GapRootScanner(int global, void *cache, void *sp) {
     Bag p = *GlobalAddr[i];
     if (IS_BAG_REF(p)) {
       JMark(JCache, JSp, p);
+#if 0
       if (PTR_BAG(p))
-	JMark(JCache, JSp, BAG_HEADER(p));
+        JMark(JCache, JSp, BAG_HEADER(p));
+#endif
     }
   }
   MarkStackFrames(STATE(CurrLVars));
@@ -542,13 +544,18 @@ void GapPostGC() {
   FreeStack();
 }
 
+static inline int GcOld(void *p) {
+  return (jl_astaggedvalue(p)->bits.gc & 2) != 0;
+}
+
 static jl_module_t * Module;
 
 void JMarkMPtr(void *cache, void *sp, void *obj) {
   if (!*(void **)obj) return;
   if (!IsValidBag(BAG_HEADER(obj)))
     abort();
-  JMark(cache, sp, BAG_HEADER(obj));
+  if (JMark(cache, sp, BAG_HEADER(obj)) && GcOld(obj))
+    jl_gc_mark_push_remset(JuliaTLS, obj, 1);
 }
 
 void JMarkBag(void *cache, void *sp, void *obj);
@@ -563,7 +570,7 @@ void            InitBags (
     VerboseDebug = getenv("GAP_DEBUG_JULIA_GC") != NULL;
     // HOOK: initialization happens here.
     jl_root_scanner_hook = GapRootScanner;
-    jl_gc_disable_generational = 1;
+    jl_gc_disable_generational = 0;
     jl_post_gc_hook = GapPostGC;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;
@@ -638,7 +645,7 @@ static inline Bag AllocateMasterPointer(void) {
   void *base = jl_pool_base_ptr(result);
   if (base != result)
     abort();
-  keep_addr(result, 0);
+  // keep_addr(result, 0);
   if (MinMPtr && lt_ptr(result, MinMPtr)) MinMPtr = result;
   if (MaxMPtr && gt_ptr(result, MaxMPtr)) MaxMPtr = result;
   return result;
@@ -701,10 +708,8 @@ Bag NewBag (
     ((UInt *)bag)[2] = type;
     if (STATE(PtrLVars)) {
         bag[3] = (void *)CURR_FUNC();
-        if (STATE(CurrLVars) != STATE(BottomLVars)) {
-            Obj plvars = PARENT_LVARS(STATE(CurrLVars));
-            bag[4] = (void *)(FUNC_LVARS(plvars));
-        }
+	UInt line = LINE_STAT(STAT_LVARS_PTR(STATE(PtrLVars)));
+	((UInt *)bag)[4] = line;
     }
 
     /* return the identifier of the new bag                                */
@@ -934,6 +939,8 @@ static void GapVerifyRoots() {
   Verifying = 0;
 }
 
+static UInt YoungRef;
+static int OldObj;
 
 inline void MarkBag(Bag bag)
 {
@@ -947,7 +954,8 @@ inline void MarkBag(Bag bag)
         if (p == bag) {
 	  if (!IsValidMPtr(p))
 	    abort();
-	  JMark(JCache, JSp, p);
+	  if (JMark(JCache, JSp, p) && OldObj)
+	    YoungRef++;
 	}
     }
 }
@@ -1001,5 +1009,9 @@ void JMarkBag(void *cache, void *sp, void *obj)
   BagHeader *hdr = (BagHeader *)obj;
   Bag contents = (Bag)(hdr + 1);
   UInt tnum = hdr->type;
+  YoungRef = 0;
+  OldObj = GcOld(obj);
   TabMarkFuncBags[tnum]((Bag)&contents);
+  if (OldObj && YoungRef)
+    jl_gc_mark_push_remset(JuliaTLS, obj, YoungRef);
 }

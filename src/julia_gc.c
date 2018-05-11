@@ -357,7 +357,7 @@ static Int          GlobalCount;
 **
 **  Allocate memory for a new bag.
 **
-**  'AllocateBagMemory' is an auxiliary routine for the Boehm GC that
+**  'AllocateBagMemory' is an auxiliary routine that
 **  allocates memory from the appropriate pool. 'gc_type' is -1 if all words
 **  in the bag can refer to other bags, 0 if the bag will not contain any
 **  references to other bags, and > 0 to indicate a specific memory layout
@@ -573,28 +573,7 @@ Bag NewBag(UInt type, UInt size)
      */
     if (size == 0)
         alloc_size++;
-    /* While we use the Boehm GC without the "all interior pointers"
-     * option, stack references to the interior of an object will
-     * still be valid from any reference on the stack. This can lead,
-     * for example, to a 1GB string never being freed if there's an
-     * integer on the stack that happens to also be a reference to
-     * any character inside that string. The garbage collector does
-     * this because after compiler optimizations (especially reduction
-     * in strength) references to the beginning of an object may be
-     * lost.
-     *
-     * However, this is not generally a risk with GAP objects, because
-     * master pointers on the heap will always retain a reference to
-     * the start of the object (or, more precisely, to the first byte
-     * past the header area). Hence, compiler optimizations pose no
-     * actual risk unless the master pointer is destroyed also.
-     *
-     * To avoid the scenario where large objects do not get deallocated,
-     * we therefore use the _ignore_off_page() calls. One caveat here
-     * is that these calls do not use thread-local allocation, making
-     * them somewhat slower. Hence, we only use them for sufficiently
-     * large objects.
-     */
+
     BagHeader * header = AllocateBagMemory(type, alloc_size);
 
     header->type = type;

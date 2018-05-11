@@ -999,7 +999,7 @@ void MarkAllSubBags(Bag bag)
 void MarkBagWeakly( Bag bag )
 {
     // TODO: implement proper weak pointers
-    if (IS_BAG_REF(bag)) MarkAllSubBags(bag);
+    MarkBag(bag);
 }
 
 void JMarkBag(void *cache, void *sp, void *obj)

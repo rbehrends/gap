@@ -397,7 +397,7 @@ static inline int JMark(void * cache, void * sp, void * obj)
     return jl_gc_mark_queue_obj(cache, sp, obj);
 }
 
-static void TryMark(void * p)
+static void TryMark(void * cache, void * sp, void * p)
 {
     jl_value_t * p2 = jl_pool_base_ptr(p);
     if (!p2) {
@@ -406,11 +406,11 @@ static void TryMark(void * p)
             p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
     }
     if (p2) {
-        JMark(JCache, JSp, p2);
+        JMark(cache, sp, p2);
     }
 }
 
-static void TryMarkRange(void * start, void * end)
+static void TryMarkRange(void * cache, void * sp, void * start, void * end)
 {
     if (gt_ptr(start, end)) {
         void * t = start;
@@ -419,7 +419,7 @@ static void TryMarkRange(void * start, void * end)
     }
     void ** p = align_ptr(start);
     while (lt_ptr(p, end)) {
-        TryMark(*p);
+        TryMark(cache, sp, *p);
         p++;
     }
 }
@@ -429,11 +429,11 @@ void CHANGED_BAG(Bag bag)
     jl_gc_wb_back(BAG_HEADER(bag));
 }
 
-static void MarkStackFrames(Bag frame)
+static void MarkStackFrames(void * cache, void * sp, Bag frame)
 {
     for (; frame; frame = PARENT_LVARS(frame)) {
-        JMark(JCache, JSp, frame);
-        JMark(JCache, JSp, BAG_HEADER(frame));
+        JMark(cache, sp, frame);
+        JMark(cache, sp, BAG_HEADER(frame));
     }
 }
 
@@ -441,24 +441,24 @@ void GapRootScanner(int global, void * cache, void * sp)
 {
     JCache = cache;
     JSp = sp;
-    JMark(JCache, JSp, Module);
-    JMark(JCache, JSp, datatype_mptr);
-    JMark(JCache, JSp, datatype_bag);
-    JMark(JCache, JSp, datatype_largebag);
+    JMark(cache, sp, Module);
+    JMark(cache, sp, datatype_mptr);
+    JMark(cache, sp, datatype_bag);
+    JMark(cache, sp, datatype_largebag);
     syJmp_buf registers;
     sySetjmp(registers);
-    TryMarkRange(registers, (char *)registers + sizeof(syJmp_buf));
-    TryMarkRange((char *)registers + sizeof(syJmp_buf), GapStackBottom);
+    TryMarkRange(cache, sp, registers, (char *)registers + sizeof(syJmp_buf));
+    TryMarkRange(cache, sp, (char *)registers + sizeof(syJmp_buf), GapStackBottom);
     for (Int i = 0; i < GlobalCount; i++) {
         Bag p = *GlobalAddr[i];
         if (IS_BAG_REF(p)) {
-            JMark(JCache, JSp, p);
+            JMark(cache, sp, p);
         }
     }
-    MarkStackFrames(STATE(CurrLVars));
+    MarkStackFrames(cache, sp, STATE(CurrLVars));
     for (Bag execState = CurrExecState(); execState;
          execState = ELM_PLIST(execState, 1)) {
-        MarkStackFrames(ELM_PLIST(execState, 2));
+        MarkStackFrames(cache, sp, ELM_PLIST(execState, 2));
     }
 }
 

@@ -676,10 +676,6 @@ void InitGlobalBag(Bag * addr, const Char * cookie)
     GlobalCount++;
 }
 
-void CallbackForAllBags(void (*func)(Bag))
-{
-}
-
 void InitCollectFuncBags(TNumCollectFuncBags before_func,
                          TNumCollectFuncBags after_func)
 {

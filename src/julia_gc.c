@@ -510,8 +510,8 @@ void GapRootScanner(int global, void *cache, void *sp) {
   JMark(JCache, JSp, datatype_largebag);
   syJmp_buf registers;
   sySetjmp(registers);
-  TryMarkRange(registers, registers + sizeof(syJmp_buf));
-  TryMarkRange(registers + sizeof(syJmp_buf), GapStackBottom);
+  TryMarkRange(registers, (char *) registers + sizeof(syJmp_buf));
+  TryMarkRange((char *)registers + sizeof(syJmp_buf), GapStackBottom);
   for (Int i = 0; i < GlobalCount; i++) {
     Bag p = *GlobalAddr[i];
     if (IS_BAG_REF(p)) {

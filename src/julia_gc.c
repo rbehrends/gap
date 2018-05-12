@@ -548,8 +548,8 @@ void InitBags(UInt              initial_size,
 
 UInt CollectBags(UInt size, UInt full)
 {
-    // HOOK: perform a full collection
-    jl_gc_collect(1);
+    // HOOK: perform a garbage collection
+    jl_gc_collect(full);
     return 1;
 }
 

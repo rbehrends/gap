@@ -473,10 +473,6 @@ void GapRootScanner(int global, void * cache, void * sp)
     // list containing the others, so it should not be necessary (and a quick
     // test confirms this
     MarkStackFrames(cache, sp, STATE(CurrLVars));
-    for (Bag execState = CurrExecState(); execState;
-         execState = ELM_PLIST(execState, 1)) {
-        MarkStackFrames(cache, sp, ELM_PLIST(execState, 2));
-    }
 }
 
 // helper function to test if Julia considers an object to

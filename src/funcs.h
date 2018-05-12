@@ -61,8 +61,6 @@ static inline void CheckRecursionBefore( void )
       RecursionDepthTrap();
 }
 
-Obj CurrExecState();
-
 
 /****************************************************************************
 **

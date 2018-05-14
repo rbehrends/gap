@@ -338,9 +338,19 @@ static inline void SET_PTR_BAG(Bag bag, Bag *val)
 
 #if !defined(USE_GASMAN)
 
+#ifndef USE_JULIA_GC
+
 static inline void CHANGED_BAG(Bag bag)
 {
 }
+
+#else
+
+// Julia
+//
+void CHANGED_BAG(Bag bag);
+
+#endif
 
 #elif defined(MEMORY_CANARY)
 
@@ -883,6 +893,13 @@ extern  Bag *                   AllocBags;
 	GC_general_register_disappearing_link((void **)(loc), (obj))
 #define FORGET_WP(loc) \
 	GC_unregister_disappearing_link((void **)(loc))
+
+#else
+
+#define IS_WEAK_DEAD_BAG(bag) (0)
+
+#define REGISTER_WP(loc, obj) ((void) 0)
+#define FORGET_WP(loc) ((void) 0)
 
 #endif
              

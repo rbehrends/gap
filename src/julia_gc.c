@@ -15,6 +15,7 @@
 #include <src/gasman.h>
 #include <src/objects.h>
 #include <src/plist.h>
+#include <src/sysmem.h>
 #include <src/system.h>
 #include <src/vars.h>
 
@@ -450,8 +451,11 @@ static void MarkStackFrames(void * cache, void * sp, Bag frame)
     }
 }
 
-void GapRootScanner(int global, void * cache, void * sp)
+void GapRootScanner(int full, void * cache, void * sp)
 {
+    /* information at the beginning of garbage collections                 */
+    SyMsgsBags( full, 0, 0 );
+
     // setup globals for use in MarkBag and GAP marking functions
     JCache = cache;
     JSp = sp;
@@ -483,6 +487,13 @@ void GapRootScanner(int global, void * cache, void * sp)
     // list containing the others, so it should not be necessary (and a quick
     // test confirms this
     MarkStackFrames(cache, sp, STATE(CurrLVars));
+}
+
+static void PostGCHook(int full)
+{
+    /* information at the beginning of garbage collections                 */
+    UInt totalAlloc = 0; // FIXME -- is this data even available?
+    SyMsgsBags( full, 6, totalAlloc );
 }
 
 // helper function to test if Julia considers an object to
@@ -529,6 +540,8 @@ void InitBags(UInt              initial_size,
     jl_gc_disable_generational = 0;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;
+    jl_post_gc_hook = PostGCHook;
+
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();

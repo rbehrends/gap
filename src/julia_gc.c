@@ -573,16 +573,6 @@ void RetypeBag(Bag bag, UInt new_type)
     header->type = new_type;
 }
 
-static inline Bag AllocateMasterPointer(void)
-{
-    // HOOK: Allocate memory for the master pointer.
-    // Master pointers require one word of memory.
-    void * result =
-        (void *)jl_extend_gc_alloc(JuliaTLS, sizeof(void *), datatype_mptr);
-    memset(result, 0, sizeof(void *));
-    return result;
-}
-
 Bag NewBag(UInt type, UInt size)
 {
     Bag  bag; /* identifier of the new bag       */
@@ -609,11 +599,11 @@ Bag NewBag(UInt type, UInt size)
     header->flags = 0;
     header->size = size;
 
-    bag = AllocateMasterPointer();
-
-    /* set the masterpointer                                               */
+    // allocate the new masterpointer
+    bag = jl_extend_gc_alloc(JuliaTLS, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, DATA(header));
-    /* return the identifier of the new bag                                */
+
+    // return the identifier of the new bag
     return bag;
 }
 

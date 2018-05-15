@@ -465,12 +465,9 @@ void GapRootScanner(int full, void * cache, void * sp)
     JCache = cache;
     JSp = sp;
 
-    // que the Julia objects we allocated (the module, and
-    // our custom datatypes)
+    // mark our Julia module (this contains references to our custom data
+    // types, which thus also will not be collected prematurely)
     JMark(cache, sp, Module);
-    JMark(cache, sp, datatype_mptr);
-    JMark(cache, sp, datatype_bag);
-    JMark(cache, sp, datatype_largebag);
 
     // scan the stack for further object references, and mark them
     syJmp_buf registers;
@@ -564,6 +561,12 @@ void InitBags(UInt              initial_size,
                                        JMarkBag, NULL, 1, 0);
     datatype_largebag = jl_new_foreign_type(
         jl_symbol("LargeBag"), Module, jl_any_type, JMarkBag, NULL, 1, 1);
+
+    // export datatypes to Julia level
+    jl_set_const(Module, jl_symbol("MPtr"), (jl_value_t *)datatype_mptr);
+    jl_set_const(Module, jl_symbol("Bag"), (jl_value_t *)datatype_bag);
+    jl_set_const(Module, jl_symbol("LargeBag"), (jl_value_t *)datatype_largebag);
+
     void * tmp = AllocateBagMemory(T_STRING, max_pool_obj_size + 1);
     void * tmpstart = treap_find(bigvals, tmp);
     bigval_startoffset = (char *)tmp - (char *)tmpstart;

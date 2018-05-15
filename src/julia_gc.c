@@ -526,12 +526,12 @@ void InitBags(UInt              initial_size,
     // jl_gc_enable(0); /// DEBUGGING
     max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
     Module = jl_new_module(jl_symbol("ForeignGAP"));
-    datatype_mptr = jl_new_foreign_type(jl_symbol("Bag"), Module, jl_any_type,
+    datatype_mptr = jl_new_foreign_type(jl_symbol("MPtr"), Module, jl_any_type,
                                         JMarkMPtr, NULL, 1, 0);
-    datatype_bag = jl_new_foreign_type(jl_symbol("BagInner"), Module,
+    datatype_bag = jl_new_foreign_type(jl_symbol("Bag"), Module,
                                        jl_any_type, JMarkBag, NULL, 1, 0);
     datatype_largebag = jl_new_foreign_type(
-        jl_symbol("BagInner"), Module, jl_any_type, JMarkBag, NULL, 1, 1);
+        jl_symbol("LargeBag"), Module, jl_any_type, JMarkBag, NULL, 1, 1);
     void * tmp = AllocateBagMemory(T_STRING, max_pool_obj_size + 1);
     void * tmpstart = treap_find(bigvals, tmp);
     bigval_startoffset = (char *)tmp - (char *)tmpstart;

@@ -664,6 +664,9 @@ void SwapMasterPoint(Bag bag1, Bag bag2)
     Obj * ptr2 = PTR_BAG(bag2);
     SET_PTR_BAG(bag1, ptr2);
     SET_PTR_BAG(bag2, ptr1);
+
+    jl_gc_wb((void *)bag1, BAG_HEADER(bag1));
+    jl_gc_wb((void *)bag2, BAG_HEADER(bag2));
 }
 
 // HOOK: mark functions

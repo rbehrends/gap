@@ -634,7 +634,7 @@ UInt ResizeBag(Bag bag, UInt new_size)
 
         // update the master pointer
         SET_PTR_BAG(bag, DATA(header));
-        jl_gc_wb_back((void *)bag);
+        jl_gc_wb((void *)bag, header);
     }
 
     // update the size

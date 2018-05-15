@@ -343,7 +343,6 @@ static UInt            YoungRef;
 static int             OldObj;
 
 
-
 #ifndef NR_GLOBAL_BAGS
 #define NR_GLOBAL_BAGS 20000L
 #endif
@@ -374,7 +373,8 @@ void * AllocateBagMemory(int type, UInt size)
         result = (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_bag);
     }
     else {
-        result = (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_largebag);
+        result =
+            (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_largebag);
     }
     memset(result, 0, size);
     return result;
@@ -405,19 +405,19 @@ static void TryMark(void * cache, void * sp, void * p)
     if (!p2) {
         p2 = treap_find(bigvals, p);
         if (p2) {
-	    // It is possible for types to not be valid objects.
-	    // Objects with such types are not normally made visible
-	    // to the mark loop, so we need to avoid marking them
-	    // during conservative stack scanning.
-	    // While jl_pool_base_ptr(p) already eliminates this
-	    // case, it can still happen for bigval_t objects, so
-	    // we run an explicit check that the type is a valid
-	    // object for these.
-	    jl_taggedvalue_t *hdr = jl_astaggedvalue(p2);
-	    if (hdr->type != jl_pool_base_ptr(hdr->type))
-		return;
+            // It is possible for types to not be valid objects.
+            // Objects with such types are not normally made visible
+            // to the mark loop, so we need to avoid marking them
+            // during conservative stack scanning.
+            // While jl_pool_base_ptr(p) already eliminates this
+            // case, it can still happen for bigval_t objects, so
+            // we run an explicit check that the type is a valid
+            // object for these.
+            jl_taggedvalue_t * hdr = jl_astaggedvalue(p2);
+            if (hdr->type != jl_pool_base_ptr(hdr->type))
+                return;
             p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
-	}
+        }
     }
     if (p2) {
         JMark(cache, sp, p2);
@@ -438,7 +438,7 @@ static void TryMarkRange(void * cache, void * sp, void * start, void * end)
     }
 }
 
-int IsGapObj(void *p)
+int IsGapObj(void * p)
 {
     return jl_typeis(p, datatype_mptr);
 }
@@ -459,7 +459,7 @@ static void MarkStackFrames(void * cache, void * sp, Bag frame)
 void GapRootScanner(int full, void * cache, void * sp)
 {
     /* information at the beginning of garbage collections                 */
-    SyMsgsBags( full, 0, 0 );
+    SyMsgsBags(full, 0, 0);
 
     // setup globals for use in MarkBag and GAP marking functions
     JCache = cache;
@@ -476,7 +476,8 @@ void GapRootScanner(int full, void * cache, void * sp)
     syJmp_buf registers;
     sySetjmp(registers);
     TryMarkRange(cache, sp, registers, (char *)registers + sizeof(syJmp_buf));
-    TryMarkRange(cache, sp, (char *)registers + sizeof(syJmp_buf), GapStackBottom);
+    TryMarkRange(cache, sp, (char *)registers + sizeof(syJmp_buf),
+                 GapStackBottom);
 
     // mark all global objects
     for (Int i = 0; i < GlobalCount; i++) {
@@ -497,8 +498,8 @@ void GapRootScanner(int full, void * cache, void * sp)
 static void PostGCHook(int full)
 {
     /* information at the beginning of garbage collections                 */
-    UInt totalAlloc = 0; // FIXME -- is this data even available?
-    SyMsgsBags( full, 6, totalAlloc );
+    UInt totalAlloc = 0;    // FIXME -- is this data even available?
+    SyMsgsBags(full, 6, totalAlloc);
 }
 
 // helper function to test if Julia considers an object to
@@ -555,11 +556,12 @@ void InitBags(UInt              initial_size,
     max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     Module->parent = jl_core_module;
-    jl_set_const(jl_core_module, jl_symbol("ForeignGAP"), (jl_value_t*)Module);
-    datatype_mptr = jl_new_foreign_type(jl_symbol("MPtr"), Module, jl_any_type,
-                                        JMarkMPtr, NULL, 1, 0);
-    datatype_bag = jl_new_foreign_type(jl_symbol("Bag"), Module,
-                                       jl_any_type, JMarkBag, NULL, 1, 0);
+    jl_set_const(jl_core_module, jl_symbol("ForeignGAP"),
+                 (jl_value_t *)Module);
+    datatype_mptr = jl_new_foreign_type(jl_symbol("MPtr"), Module,
+                                        jl_any_type, JMarkMPtr, NULL, 1, 0);
+    datatype_bag = jl_new_foreign_type(jl_symbol("Bag"), Module, jl_any_type,
+                                       JMarkBag, NULL, 1, 0);
     datatype_largebag = jl_new_foreign_type(
         jl_symbol("LargeBag"), Module, jl_any_type, JMarkBag, NULL, 1, 1);
     void * tmp = AllocateBagMemory(T_STRING, max_pool_obj_size + 1);
@@ -760,4 +762,3 @@ void MarkBagWeakly(Bag bag)
     // TODO: implement proper weak pointers
     MarkBag(bag);
 }
-

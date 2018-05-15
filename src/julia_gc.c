@@ -25,8 +25,6 @@
 #include "julia.h"
 #include "gcext.h"
 
-extern jl_value_t *(jl_gc_alloc)(jl_ptls_t ptls, size_t sz, void * ty);
-
 
 enum { NTYPES = 256 };
 
@@ -372,10 +370,10 @@ void * AllocateBagMemory(int type, UInt size)
     // HOOK: return `size` bytes memory of TNUM `type`.
     void * result;
     if (size <= max_pool_obj_size) {
-        result = (void *)jl_gc_alloc(JuliaTLS, size, datatype_bag);
+        result = (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_bag);
     }
     else {
-        result = (void *)jl_gc_alloc(JuliaTLS, size, datatype_largebag);
+        result = (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_largebag);
     }
     memset(result, 0, size);
     return result;
@@ -580,7 +578,7 @@ static inline Bag AllocateMasterPointer(void)
     // HOOK: Allocate memory for the master pointer.
     // Master pointers require one word of memory.
     void * result =
-        (void *)jl_gc_alloc(JuliaTLS, sizeof(void *), datatype_mptr);
+        (void *)jl_extend_gc_alloc(JuliaTLS, sizeof(void *), datatype_mptr);
     memset(result, 0, sizeof(void *));
     return result;
 }

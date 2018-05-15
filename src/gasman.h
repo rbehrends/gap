@@ -350,6 +350,8 @@ static inline void CHANGED_BAG(Bag bag)
 //
 void CHANGED_BAG(Bag bag);
 
+int IsGapObj(void *);
+
 #endif
 
 #elif defined(MEMORY_CANARY)
@@ -902,7 +904,7 @@ extern  Bag *                   AllocBags;
 #define FORGET_WP(loc) ((void) 0)
 
 #endif
-             
+
 /****************************************************************************
 **
 *F  InitSweepFuncBags(<type>,<sweep-func>)  . . . . install sweeping function

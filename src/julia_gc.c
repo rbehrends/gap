@@ -438,6 +438,11 @@ static void TryMarkRange(void * cache, void * sp, void * start, void * end)
     }
 }
 
+int IsGapObj(void *p)
+{
+    return jl_typeis(p, datatype_mptr);
+}
+
 void CHANGED_BAG(Bag bag)
 {
     jl_gc_wb_back(BAG_HEADER(bag));

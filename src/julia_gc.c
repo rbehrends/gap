@@ -551,9 +551,10 @@ void InitBags(UInt              initial_size,
     JuliaTLS = jl_extend_get_ptls_states();
     // jl_gc_enable(0); /// DEBUGGING
     max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
+
     Module = jl_new_module(jl_symbol("ForeignGAP"));
-    Module->parent = jl_core_module;
-    jl_set_const(jl_core_module, jl_symbol("ForeignGAP"),
+    Module->parent = jl_main_module;
+    jl_set_const(jl_main_module, jl_symbol("ForeignGAP"),
                  (jl_value_t *)Module);
     datatype_mptr = jl_new_foreign_type(jl_symbol("MPtr"), Module,
                                         jl_any_type, JMarkMPtr, NULL, 1, 0);

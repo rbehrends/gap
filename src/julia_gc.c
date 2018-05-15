@@ -403,8 +403,20 @@ static void TryMark(void * cache, void * sp, void * p)
     jl_value_t * p2 = jl_pool_base_ptr(p);
     if (!p2) {
         p2 = treap_find(bigvals, p);
-        if (p2)
+        if (p2) {
+	    // It is possible for types to not be valid objects.
+	    // Objects with such types are not normally made visible
+	    // to the mark loop, so we need to avoid marking them
+	    // during conservative stack scanning.
+	    // While jl_pool_base_ptr(p) already eliminates this
+	    // case, it can still happen for bigval_t objects, so
+	    // we run an explicit check that the type is a valid
+	    // object for these.
+	    jl_taggedvalue_t *hdr = jl_astaggedvalue(p2);
+	    if (hdr->type != jl_pool_base_ptr(hdr->type))
+		return;
             p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
+	}
     }
     if (p2) {
         JMark(cache, sp, p2);

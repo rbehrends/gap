@@ -420,10 +420,10 @@ static void TryMarkRange(void * cache, void * sp, void * start, void * end)
         start = end;
         end = t;
     }
-    void ** p = align_ptr(start);
+    char * p = align_ptr(start);
     while (lt_ptr(p, end)) {
-        TryMark(cache, sp, *p);
-        p++;
+        TryMark(cache, sp, *(void **)p);
+        p += GapStackAlign;
     }
 }
 

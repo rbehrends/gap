@@ -619,49 +619,38 @@ Bag NewBag(UInt type, UInt size)
 
 UInt ResizeBag(Bag bag, UInt new_size)
 {
-    UInt  type; /* type of the bag                 */
-    UInt  flags;
-    UInt  old_size; /* old size of the bag             */
-    Bag * src;      /* source in copying               */
-    UInt  alloc_size;
-
     BagHeader * header = BAG_HEADER(bag);
-
-    /* get type and old size of the bag                                    */
-    type = header->type;
-    flags = header->flags;
-    old_size = header->size;
+    UInt        old_size = header->size;
 
 #ifdef COUNT_BAGS
-    /* update the statistics                                               */
-    InfoBags[type].sizeLive += new_size - old_size;
-    InfoBags[type].sizeAll += new_size - old_size;
+    // update the statistics
+    InfoBags[header->type].sizeLive += new_size - old_size;
+    InfoBags[header->type].sizeAll += new_size - old_size;
 #endif
     SizeAllBags += new_size - old_size;
 
-    if (new_size <= old_size) {
-        /* change the size word                                            */
-        header->size = new_size;
-    }
-
-    /* if the bag is enlarged                                              */
-    else {
-        alloc_size = sizeof(BagHeader) + new_size;
+    // if the bag is enlarged
+    if (new_size > old_size) {
+        UInt alloc_size = sizeof(BagHeader) + new_size;
+        // if size is zero, increment by 1; see NewBag for an explanation
         if (new_size == 0)
             alloc_size++;
-        header = AllocateBagMemory(type, alloc_size);
 
-        header->type = type;
-        header->flags = flags;
-        header->size = new_size;
+        // allocate new bag
+        header = AllocateBagMemory(header->type, alloc_size);
 
-        // copy data and update the masterpointer
-        src = PTR_BAG(bag);
-        memcpy(DATA(header), src, old_size < new_size ? old_size : new_size);
+        // copy bag header and data, and update size
+        memcpy(header, BAG_HEADER(bag), sizeof(BagHeader) + old_size);
+
+        // update the master pointer
         SET_PTR_BAG(bag, DATA(header));
         jl_gc_wb_back((void *)bag);
     }
-    /* return success                                                      */
+
+    // update the size
+    header->size = new_size;
+
+    // return success
     return 1;
 }
 

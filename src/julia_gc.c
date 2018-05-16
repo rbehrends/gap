@@ -51,13 +51,13 @@ void InitFreeFuncBag(UInt type, TNumFreeFuncBags finalizer_func)
     TabFreeFuncBags[type] = finalizer_func;
 }
 
-void StandardFinalizer(void * bagContents, void * data)
+void JFinalizer(void * obj)
 {
-    Bag    bag;
-    void * bagContents2;
-    bagContents2 = ((char *)bagContents) + sizeof(BagHeader);
-    bag = (Bag)&bagContents2;
-    TabFreeFuncBags[TNUM_BAG(bag)](bag);
+    BagHeader * hdr = (BagHeader *)obj;
+    Bag         contents = (Bag)(hdr + 1);
+    UInt        tnum = hdr->type;
+    GAP_ASSERT(TabFreeFuncBags[tnum] != 0);
+    TabFreeFuncBags[tnum]((Bag)&contents);
 }
 
 /****************************************************************************
@@ -357,15 +357,8 @@ static Int          GlobalCount;
 *F  AllocateBagMemory( <type>, <size> )
 **
 **  Allocate memory for a new bag.
-**
-**  'AllocateBagMemory' is an auxiliary routine that
-**  allocates memory from the appropriate pool. 'gc_type' is -1 if all words
-**  in the bag can refer to other bags, 0 if the bag will not contain any
-**  references to other bags, and > 0 to indicate a specific memory layout
-**  descriptor.
 **/
-
-void * AllocateBagMemory(int type, UInt size)
+static void * AllocateBagMemory(UInt type, UInt size)
 {
     // HOOK: return `size` bytes memory of TNUM `type`.
     void * result;
@@ -377,6 +370,8 @@ void * AllocateBagMemory(int type, UInt size)
             (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_largebag);
     }
     memset(result, 0, size);
+    if (TabFreeFuncBags[type])
+        jl_extend_gc_set_needs_finalizer((jl_value_t *)result);
     return result;
 }
 
@@ -563,9 +558,10 @@ void InitBags(UInt              initial_size,
     datatype_mptr = jl_new_foreign_type(jl_symbol("MPtr"), Module,
                                         jl_any_type, JMarkMPtr, NULL, 1, 0);
     datatype_bag = jl_new_foreign_type(jl_symbol("Bag"), Module, jl_any_type,
-                                       JMarkBag, NULL, 1, 0);
-    datatype_largebag = jl_new_foreign_type(
-        jl_symbol("LargeBag"), Module, jl_any_type, JMarkBag, NULL, 1, 1);
+                                       JMarkBag, JFinalizer, 1, 0);
+    datatype_largebag =
+        jl_new_foreign_type(jl_symbol("LargeBag"), Module, jl_any_type,
+                            JMarkBag, JFinalizer, 1, 1);
 
     // export datatypes to Julia level
     jl_set_const(Module, jl_symbol("MPtr"), (jl_value_t *)datatype_mptr);

@@ -875,6 +875,8 @@ static Int InitKernel (
     InitFreeFuncBag( T_WPOBJ, FinalizeWeakPointerObj );
     InitFreeFuncBag( T_WPOBJ+COPYING, FinalizeWeakPointerObj );
   #endif
+#elif defined(USE_JULIA_GC)
+#warning TODO: Weak pointer objects for Julia GC
 #else
 #error Unknown garbage collector implementation, no weak pointer object implemention available
 #endif

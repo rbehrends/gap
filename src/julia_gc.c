@@ -402,10 +402,10 @@ static void TryMark(void * cache, void * sp, void * p)
             // case, it can still happen for bigval_t objects, so
             // we run an explicit check that the type is a valid
             // object for these.
+            p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
             jl_taggedvalue_t * hdr = jl_astaggedvalue(p2);
             if (hdr->type != jl_pool_base_ptr(hdr->type))
                 return;
-            p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
         }
     }
     if (p2) {

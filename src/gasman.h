@@ -934,6 +934,7 @@ extern  Bag *                   AllocBags;
 **  unchanged and this is done particularly quickly 
 */
 
+#ifdef USE_GASMAN
 typedef void            (* TNumSweepFuncBags ) (
             Bag  *               src,
             Bag *                dst,
@@ -942,7 +943,7 @@ typedef void            (* TNumSweepFuncBags ) (
 extern  void            InitSweepFuncBags (
             UInt                tnum,
             TNumSweepFuncBags    sweep_func );
- 
+#endif
 
 /****************************************************************************
 **

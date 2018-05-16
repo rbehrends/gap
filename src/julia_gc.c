@@ -388,12 +388,6 @@ void InitMarkFuncBags(UInt type, TNumMarkFuncBags mark_func)
     TabMarkFuncBags[type] = mark_func;
 }
 
-void InitSweepFuncBags(UInt type, TNumSweepFuncBags mark_func)
-{
-    // HOOK: set sweep function for type `type`.
-    // This is intended for weak pointer objects.
-}
-
 static inline int JMark(void * cache, void * sp, void * obj)
 {
     return jl_gc_mark_queue_obj(cache, sp, obj);
@@ -699,11 +693,6 @@ void InitGlobalBag(Bag * addr, const Char * cookie)
     GlobalAddr[GlobalCount] = addr;
     GlobalCookie[GlobalCount] = cookie;
     GlobalCount++;
-}
-
-void InitCollectFuncBags(TNumCollectFuncBags before_func,
-                         TNumCollectFuncBags after_func)
-{
 }
 
 void SwapMasterPoint(Bag bag1, Bag bag2)

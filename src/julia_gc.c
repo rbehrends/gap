@@ -334,9 +334,7 @@ static jl_datatype_t * datatype_bag;
 static jl_datatype_t * datatype_largebag;
 static void *          GapStackBottom = NULL;
 static size_t          GapStackAlign = sizeof(Int);
-static jl_ptls_t       JuliaTLS = NULL;
-static void *          JCache;
-static void *          JSp;
+static void *          JContext[JL_GC_CONTEXT_SIZE];
 static size_t          max_pool_obj_size;
 static size_t          bigval_startoffset;
 static UInt            YoungRef;
@@ -363,11 +361,11 @@ static void * AllocateBagMemory(UInt type, UInt size)
     // HOOK: return `size` bytes memory of TNUM `type`.
     void * result;
     if (size <= max_pool_obj_size) {
-        result = (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_bag);
+        result = (void *)jl_extend_gc_alloc(JContext, size, datatype_bag);
     }
     else {
         result =
-            (void *)jl_extend_gc_alloc(JuliaTLS, size, datatype_largebag);
+            (void *)jl_extend_gc_alloc(JContext, size, datatype_largebag);
     }
     memset(result, 0, size);
     if (TabFreeFuncBags[type])
@@ -383,12 +381,12 @@ void InitMarkFuncBags(UInt type, TNumMarkFuncBags mark_func)
     TabMarkFuncBags[type] = mark_func;
 }
 
-static inline int JMark(void * cache, void * sp, void * obj)
+static inline int JMark(void * obj)
 {
-    return jl_gc_mark_queue_obj(cache, sp, obj);
+    return jl_gc_mark_queue_obj(JContext, obj);
 }
 
-static void TryMark(void * cache, void * sp, void * p)
+static void TryMark(void * p)
 {
     jl_value_t * p2 = jl_pool_base_ptr(p);
     if (!p2) {
@@ -409,11 +407,11 @@ static void TryMark(void * cache, void * sp, void * p)
         }
     }
     if (p2) {
-        JMark(cache, sp, p2);
+        JMark(p2);
     }
 }
 
-static void TryMarkRange(void * cache, void * sp, void * start, void * end)
+static void TryMarkRange(void * start, void * end)
 {
     if (gt_ptr(start, end)) {
         void * t = start;
@@ -423,7 +421,7 @@ static void TryMarkRange(void * cache, void * sp, void * start, void * end)
     char * p = align_ptr(start);
     char * q = (char *) end - sizeof(void *) + GapStackAlign;
     while (lt_ptr(p, q)) {
-        TryMark(cache, sp, *(void **)p);
+        TryMark(*(void **)p);
         p += GapStackAlign;
     }
 }
@@ -438,39 +436,31 @@ void CHANGED_BAG(Bag bag)
     jl_gc_wb_back(BAG_HEADER(bag));
 }
 
-static void MarkStackFrames(void * cache, void * sp, Bag frame)
+static void MarkStackFrames(Bag frame)
 {
     for (; frame; frame = PARENT_LVARS(frame)) {
-        JMark(cache, sp, frame);
-        JMark(cache, sp, BAG_HEADER(frame));
+        JMark(frame);
+        JMark(BAG_HEADER(frame));
     }
 }
 
-void GapRootScanner(int full, void * cache, void * sp)
+void GapRootScanner(int full)
 {
-    /* information at the beginning of garbage collections                 */
-    SyMsgsBags(full, 0, 0);
-
-    // setup globals for use in MarkBag and GAP marking functions
-    JCache = cache;
-    JSp = sp;
-
     // mark our Julia module (this contains references to our custom data
     // types, which thus also will not be collected prematurely)
-    JMark(cache, sp, Module);
+    JMark(Module);
 
     // scan the stack for further object references, and mark them
     syJmp_buf registers;
     sySetjmp(registers);
-    TryMarkRange(cache, sp, registers, (char *)registers + sizeof(syJmp_buf));
-    TryMarkRange(cache, sp, (char *)registers + sizeof(syJmp_buf),
-                 GapStackBottom);
+    TryMarkRange(registers, (char *)registers + sizeof(syJmp_buf));
+    TryMarkRange((char *)registers + sizeof(syJmp_buf), GapStackBottom);
 
     // mark all global objects
     for (Int i = 0; i < GlobalCount; i++) {
         Bag p = *GlobalAddr[i];
         if (IS_BAG_REF(p)) {
-            JMark(cache, sp, p);
+            JMark(p);
         }
     }
 
@@ -479,20 +469,25 @@ void GapRootScanner(int full, void * cache, void * sp)
     // a global object (via GlobalAddr above), and it is the head of a linked
     // list containing the others, so it should not be necessary (and a quick
     // test confirms this
-    MarkStackFrames(cache, sp, STATE(CurrLVars));
+    MarkStackFrames(STATE(CurrLVars));
 }
 
-void GapTaskScanner(void *cache, void *sp, jl_task_t *task, int root_task)
+void GapTaskScanner(jl_task_t *task, int root_task)
 {
     if (task->stkbuf) {
-       TryMarkRange(JCache, JSp, task->stkbuf,
-                    (char *)task->stkbuf + task->bufsz);
+       TryMarkRange(task->stkbuf, (char *)task->stkbuf + task->bufsz);
     }
+}
+
+static void PreGCHook(int full)
+{
+    /* information at the beginning of garbage collections                 */
+    SyMsgsBags(full, 0, 0);
 }
 
 static void PostGCHook(int full)
 {
-    /* information at the beginning of garbage collections                 */
+    /* information at the end of garbage collections                 */
     UInt totalAlloc = 0;    // FIXME -- is this data even available?
     SyMsgsBags(full, 6, totalAlloc);
 }
@@ -506,20 +501,18 @@ static inline int GcOld(void * p)
 
 // the Julia marking function for master pointer objects (i.e., this function
 // is called by the Julia GC whenever it marks a GAP master pointer object)
-static void JMarkMPtr(void * cache, void * sp, void * obj)
+static void JMarkMPtr(void * obj)
 {
     if (!*(void **)obj)
         return;
-    if (JMark(cache, sp, BAG_HEADER(obj)) && GcOld(obj))
-        jl_gc_mark_push_remset(JuliaTLS, obj, 1);
+    if (JMark(BAG_HEADER(obj)) && GcOld(obj))
+        jl_gc_mark_push_remset(JContext, obj, 1);
 }
 
 // the Julia marking function for bags (i.e., this function is called by the
 // Julia GC whenever it marks a GAP bag object)
-static void JMarkBag(void * cache, void * sp, void * obj)
+static void JMarkBag(void * obj)
 {
-    JCache = cache;
-    JSp = sp;
     BagHeader * hdr = (BagHeader *)obj;
     Bag         contents = (Bag)(hdr + 1);
     UInt        tnum = hdr->type;
@@ -527,7 +520,14 @@ static void JMarkBag(void * cache, void * sp, void * obj)
     OldObj = GcOld(obj);
     TabMarkFuncBags[tnum]((Bag)&contents);
     if (OldObj && YoungRef)
-        jl_gc_mark_push_remset(JuliaTLS, obj, YoungRef);
+        jl_gc_mark_push_remset(JContext, obj, YoungRef);
+}
+
+static void SetJuliaContext(int tid, int index, void *data)
+{
+    if (tid > 0)
+      return;
+    JContext[index] = data;
 }
 
 
@@ -542,12 +542,13 @@ void InitBags(UInt              initial_size,
     jl_gc_disable_generational = 0;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;
+    jl_pre_gc_hook = PreGCHook;
     jl_post_gc_hook = PostGCHook;
+    jl_gc_set_context_hook = SetJuliaContext;
 
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();
-    JuliaTLS = jl_extend_get_ptls_states();
     // jl_gc_enable(0); /// DEBUGGING
     max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
 
@@ -638,7 +639,7 @@ Bag NewBag(UInt type, UInt size)
     header->size = size;
 
     // allocate the new masterpointer
-    bag = jl_extend_gc_alloc(JuliaTLS, sizeof(void *), datatype_mptr);
+    bag = jl_extend_gc_alloc(JContext, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, DATA(header));
 
     // return the identifier of the new bag
@@ -709,7 +710,7 @@ inline void MarkBag(Bag bag)
     if (IS_BAG_REF(bag)) {
         void * p = jl_pool_base_ptr(bag);
         if (p == bag) {
-            if (JMark(JCache, JSp, p) && OldObj)
+            if (JMark(p) && OldObj)
                 YoungRef++;
         }
     }

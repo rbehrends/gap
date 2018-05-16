@@ -432,7 +432,8 @@ static void TryMarkRange(void * cache, void * sp, void * start, void * end)
         end = t;
     }
     char * p = align_ptr(start);
-    while (lt_ptr(p, end)) {
+    char * q = (char *) end - sizeof(void *) + GapStackAlign;
+    while (lt_ptr(p, q)) {
         TryMark(cache, sp, *(void **)p);
         p += GapStackAlign;
     }
@@ -492,6 +493,14 @@ void GapRootScanner(int full, void * cache, void * sp)
     MarkStackFrames(cache, sp, STATE(CurrLVars));
 }
 
+void GapTaskScanner(void *cache, void *sp, jl_task_t *task, int root_task)
+{
+    if (task->stkbuf) {
+       TryMarkRange(JCache, JSp, task->stkbuf,
+                    (char *)task->stkbuf + task->bufsz);
+    }
+}
+
 static void PostGCHook(int full)
 {
     /* information at the beginning of garbage collections                 */
@@ -540,6 +549,7 @@ void InitBags(UInt              initial_size,
 {
     // HOOK: initialization happens here.
     jl_root_scanner_hook = GapRootScanner;
+    jl_task_scanner_hook = GapTaskScanner;
     jl_gc_disable_generational = 0;
     jl_nonpool_alloc_hook = alloc_bigval;
     jl_nonpool_free_hook = free_bigval;

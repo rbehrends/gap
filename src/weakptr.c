@@ -37,6 +37,10 @@
 # include <gc/gc.h>
 #endif
 
+#ifdef USE_JULIA_GC
+#include "julia.h"
+#endif
+
 
 /****************************************************************************
 **
@@ -87,7 +91,42 @@
 **  ELM_WPOBJ(<wp>,<pos>) is a valid lvalue and may be assigned to
 */
 
+#ifndef USE_JULIA_GC
 #define ELM_WPOBJ(list,pos)             (ADDR_OBJ(list)[pos])
+#else
+static inline Obj ElmWpObj(Obj list, int pos)
+{
+    jl_weakref_t *wref = (jl_weakref_t *)(ADDR_OBJ(list)[pos]);
+    if (!wref) return 0;
+    if (wref->value == jl_nothing) {
+	return 0;
+    }
+    return (Obj) (wref->value);
+}
+#define ELM_WPOBJ(list,pos) (ElmWpObj((list), (pos)))
+#endif
+
+#ifndef USE_JULIA_GC
+#define SET_ELM_WPOBJ(list,pos,val)             (ADDR_OBJ(list)[pos])
+#else
+static inline void SetElmWpObj(Obj list, int pos, Obj val)
+{
+    if (!val) {
+	(ADDR_OBJ(list)[pos]) = 0;
+	return;
+    }
+    jl_weakref_t *wref = (jl_weakref_t *)(ADDR_OBJ(list)[pos]);
+    if (!wref) {
+        (ADDR_OBJ(list)[pos]) = (Bag) jl_gc_new_weakref((jl_value_t *)val);
+	jl_gc_wb_back((jl_value_t *) list);
+    } else {
+      wref->value = (jl_value_t *) val;
+      jl_gc_wb((jl_value_t *) list, (jl_value_t *) wref);
+    }
+}
+#define SET_ELM_WPOBJ(list, pos, val) (SetElmWpObj((list), (pos), (val)))
+#endif
+
 
 
 /****************************************************************************
@@ -176,7 +215,7 @@ Obj FuncWeakPointerObj( Obj self, Obj list ) {
       if (IS_BAG_REF(tmp))
         REGISTER_WP(&ELM_WPOBJ(wp, i), tmp);
 #else
-      ELM_WPOBJ(wp,i) = ELM0_LIST(list,i); 
+      SET_ELM_WPOBJ(wp, i, ELM0_LIST(list,i)); 
 #endif
       CHANGED_BAG(wp);          /* this must be here in case list is 
                                  in fact an object and causes a GC in the 
@@ -216,7 +255,7 @@ Int LengthWPObj(Obj wp)
           IS_WEAK_DEAD_BAG(elm))) {
     changed = 1;
     if (elm)
-      ELM_WPOBJ(wp,len) = 0;
+      SET_ELM_WPOBJ(wp, len, 0);
     len--;
   }
 #else
@@ -301,7 +340,7 @@ Obj FuncSetElmWPObj(Obj self, Obj wp, Obj pos, Obj val)
   if (IS_BAG_REF(val2))
     REGISTER_WP(&ELM_WPOBJ(wp, ipos), val2);
 #else
-  ELM_WPOBJ(wp,ipos) = val;
+  SET_ELM_WPOBJ(wp,ipos,val);
 #endif
   CHANGED_BAG(wp);
   return 0;
@@ -353,7 +392,7 @@ Int IsBoundElmWPObj( Obj wp, Obj pos)
 #else
   if (IS_WEAK_DEAD_BAG(elm))
     {
-      ELM_WPOBJ(wp,ipos) = 0;
+      SET_ELM_WPOBJ(wp,ipos,0);
       return 0;
     }
   if (elm == 0)
@@ -407,7 +446,7 @@ Obj FuncUnbindElmWPObj( Obj self, Obj wp, Obj pos)
   Int len = LengthWPObj(wp);
   if ( ipos <= len ) {
 #ifndef USE_BOEHM_GC
-    ELM_WPOBJ( wp, ipos) =  0;
+    SET_ELM_WPOBJ( wp, ipos, 0);
 #else
     /* Ensure the result is visible on the stack in case a garbage
      * collection happens after the read.
@@ -417,7 +456,7 @@ Obj FuncUnbindElmWPObj( Obj self, Obj wp, Obj pos)
     if (ELM_WPOBJ(wp, ipos)) {
       if (IS_BAG_REF(tmp))
         FORGET_WP( &ELM_WPOBJ(wp, ipos));
-      ELM_WPOBJ( wp, ipos) =  0;
+      ELM_WPOBJ( wp, ipos ) = 0;
     }
 #endif
   }
@@ -466,7 +505,7 @@ Obj ElmDefWPList(Obj wp, Int ipos, Obj def)
 #else
   if (IS_WEAK_DEAD_BAG(elm))
     {
-      ELM_WPOBJ(wp,ipos) = 0;
+      SET_ELM_WPOBJ(wp, ipos, 0);
       return def;
     }
   if (elm == 0)
@@ -555,6 +594,25 @@ static void SweepWeakPointerObj( Bag *src, Bag *dst, UInt len)
       *dst ++ = IS_WEAK_DEAD_BAG(elm) ? (Bag) 0 : elm;
     }
 }
+
+#elif defined(USE_JULIA_GC)
+
+static void MarkWeakPointerObj( Obj wp) 
+{
+  void JMarkFrom(void *parent, void *ref);
+  Int i;
+  /* can't use the stored length here, in case we
+     are in the middle of copying */
+  for (i = 1; i <= (SIZE_BAG(wp)/sizeof(Obj))-1; i++)
+  {
+      void *wref = ADDR_OBJ(wp)[i];
+      void *parent = BAG_HEADER(wp);
+      if (wref) {
+	  JMarkFrom(parent, wref);
+      }
+    }
+  }
+
 
 #endif
 
@@ -668,7 +726,7 @@ void MakeImmutableWPObj( Obj obj )
     {
       Obj elm = ELM_WPOBJ(obj,i);
       if (elm != 0 && IS_WEAK_DEAD_BAG(elm)) 
-        ELM_WPOBJ(obj,i) = 0;
+        SET_ELM_WPOBJ(obj,i, 0);
     }
   /* Change the type */
   RetypeBag( obj, T_PLIST+IMMUTABLE);
@@ -878,7 +936,8 @@ static Int InitKernel (
     InitFreeFuncBag( T_WPOBJ+COPYING, FinalizeWeakPointerObj );
   #endif
 #elif defined(USE_JULIA_GC)
-#warning TODO: Weak pointer objects for Julia GC
+    InitMarkFuncBags ( T_WPOBJ,          MarkWeakPointerObj   );
+    InitMarkFuncBags ( T_WPOBJ +COPYING, MarkWeakPointerObj   );
 #else
 #error Unknown garbage collector implementation, no weak pointer object implemention available
 #endif

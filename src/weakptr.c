@@ -102,7 +102,7 @@ static inline Obj ElmWPObj(Obj list, int pos)
     if (!wref) return 0;
     if (wref->value == jl_nothing) {
         ADDR_OBJ(list)[pos] = 0;
-	return 0;
+        return 0;
     }
     return (Obj) (wref->value);
 }
@@ -115,13 +115,13 @@ static inline Obj ElmWPObj(Obj list, int pos)
 static inline void SetElmWPObj(Obj list, int pos, Obj val)
 {
     if (!IS_BAG_REF(val)) {
-	(ADDR_OBJ(list)[pos]) = val;
-	return;
+        (ADDR_OBJ(list)[pos]) = val;
+        return;
     }
     jl_weakref_t *wref = (jl_weakref_t *)(ADDR_OBJ(list)[pos]);
     if (!wref) {
         (ADDR_OBJ(list)[pos]) = (Bag) jl_gc_new_weakref((jl_value_t *)val);
-	jl_gc_wb_back((jl_value_t *) list);
+        jl_gc_wb_back((jl_value_t *) list);
     } else {
       wref->value = (jl_value_t *) val;
       jl_gc_wb((jl_value_t *) list, (jl_value_t *) wref);
@@ -620,9 +620,9 @@ static void MarkWeakPointerObj( Obj wp)
   {
       void *wref = ADDR_OBJ(wp)[i];
       if (IS_BAG_REF(wref)) {
-	  if (wref) {
-	      JMarkFrom(parent, wref);
-	  }
+          if (wref) {
+              JMarkFrom(parent, wref);
+          }
       }
     }
   }
@@ -709,12 +709,24 @@ Obj CopyObjWPObj (
 
     /* copy the subvalues                                                  */
     for ( i =  SIZE_OBJ(obj)/sizeof(Obj)-1; i > 0; i-- ) {
+#ifndef USE_JULIA_GC
         elm = CONST_ADDR_OBJ(obj)[i];
         if ( elm != 0  && !IS_WEAK_DEAD_BAG(elm)) {
             tmp = COPY_OBJ( elm, mut );
             ADDR_OBJ(copy)[i] = tmp;
             CHANGED_BAG( copy );
         }
+#else
+        elm = ELM_WPOBJ(obj, i);
+        if (elm) {
+            tmp = COPY_OBJ(elm, mut);
+            if (mut)
+                SET_ELM_WPOBJ(copy, i, tmp);
+            else
+                SET_ELM_PLIST(copy, i, tmp);
+            CHANGED_BAG( copy );
+        }
+#endif
     }
 
     /* return the copy                                                     */
@@ -738,9 +750,13 @@ void MakeImmutableWPObj( Obj obj )
   /* remove any weak dead bags */
   for (i = 1; i <= STORED_LEN_WPOBJ(obj); i++)
     {
-      Obj elm = ELM_WPOBJ(obj,i);
+      Obj elm = ELM_WPOBJ(obj, i);
+#ifndef USE_JULIA_GC
       if (elm != 0 && IS_WEAK_DEAD_BAG(elm)) 
-        SET_ELM_WPOBJ(obj,i, 0);
+        SET_ELM_WPOBJ(obj, i, 0);
+#else
+      ADDR_OBJ(obj)[i] = elm;
+#endif
     }
   /* Change the type */
   RetypeBag( obj, T_PLIST+IMMUTABLE);
@@ -808,9 +824,15 @@ void CleanObjWPObjCopy (
 
     /* clean the subvalues                                                 */
     for ( i = 1; i < SIZE_OBJ(obj)/sizeof(Obj); i++ ) {
+#ifndef USE_JULIA_GC
         elm = CONST_ADDR_OBJ(obj)[i];
         if ( elm != 0  && !IS_WEAK_DEAD_BAG(elm)) 
-          CLEAN_OBJ( elm );
+            CLEAN_OBJ( elm );
+#else
+        elm = ELM_WPOBJ(obj, i);
+        if (elm)
+            CLEAN_OBJ( elm );
+#endif
     }
 
 }

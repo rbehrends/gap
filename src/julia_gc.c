@@ -523,6 +523,12 @@ static void JMarkBag(void * obj)
         jl_gc_mark_push_remset(JContext, obj, YoungRef);
 }
 
+void JMarkFrom(void *parent, void *ref)
+{
+    if (JMark(ref) && GcOld(parent))
+        jl_gc_mark_push_remset(JContext, parent, 1);
+}
+
 static void SetJuliaContext(int tid, int index, void *data)
 {
     if (tid > 0)
@@ -755,10 +761,4 @@ void MarkAllSubBags(Bag bag)
 void MarkAllButFirstSubBags(Bag bag)
 {
     MarkArrayOfBags(CONST_PTR_BAG(bag) + 1, SIZE_BAG(bag) / sizeof(Bag) - 1);
-}
-
-void MarkBagWeakly(Bag bag)
-{
-    // TODO: implement proper weak pointers
-    MarkBag(bag);
 }

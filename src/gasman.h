@@ -896,6 +896,9 @@ extern  Bag *                   AllocBags;
 #define FORGET_WP(loc) \
 	GC_unregister_disappearing_link((void **)(loc))
 
+#elif defined(USE_JULIA_GC)
+#define IS_WEAK_DEAD_BAG IsWeakDeadBag
+
 #else
 
 #define IS_WEAK_DEAD_BAG(bag) (0)

@@ -94,25 +94,28 @@
 #ifndef USE_JULIA_GC
 #define ELM_WPOBJ(list,pos)             (ADDR_OBJ(list)[pos])
 #else
-static inline Obj ElmWpObj(Obj list, int pos)
+static inline Obj ElmWPObj(Obj list, int pos)
 {
-    jl_weakref_t *wref = (jl_weakref_t *)(ADDR_OBJ(list)[pos]);
+    Bag item = ADDR_OBJ(list)[pos];
+    if (!IS_BAG_REF(item)) return item;
+    jl_weakref_t *wref = (jl_weakref_t *)item;
     if (!wref) return 0;
     if (wref->value == jl_nothing) {
+        ADDR_OBJ(list)[pos] = 0;
 	return 0;
     }
     return (Obj) (wref->value);
 }
-#define ELM_WPOBJ(list,pos) (ElmWpObj((list), (pos)))
+#define ELM_WPOBJ ElmWPObj
 #endif
 
 #ifndef USE_JULIA_GC
 #define SET_ELM_WPOBJ(list,pos,val)             (ADDR_OBJ(list)[pos])
 #else
-static inline void SetElmWpObj(Obj list, int pos, Obj val)
+static inline void SetElmWPObj(Obj list, int pos, Obj val)
 {
-    if (!val) {
-	(ADDR_OBJ(list)[pos]) = 0;
+    if (!IS_BAG_REF(val)) {
+	(ADDR_OBJ(list)[pos]) = val;
 	return;
     }
     jl_weakref_t *wref = (jl_weakref_t *)(ADDR_OBJ(list)[pos]);
@@ -124,7 +127,16 @@ static inline void SetElmWpObj(Obj list, int pos, Obj val)
       jl_gc_wb((jl_value_t *) list, (jl_value_t *) wref);
     }
 }
-#define SET_ELM_WPOBJ(list, pos, val) (SetElmWpObj((list), (pos), (val)))
+#define SET_ELM_WPOBJ SetElmWPObj
+#endif
+
+#ifdef USE_JULIA_GC
+static inline int IsWeakDeadBag(Bag bag)
+{
+    if (bag == NULL) return 1;
+    if (!IS_BAG_REF(bag)) return 0;
+    return ((jl_weakref_t *) bag)->value == jl_nothing;
+}
 #endif
 
 
@@ -603,12 +615,14 @@ static void MarkWeakPointerObj( Obj wp)
   Int i;
   /* can't use the stored length here, in case we
      are in the middle of copying */
+  void *parent = BAG_HEADER(wp);
   for (i = 1; i <= (SIZE_BAG(wp)/sizeof(Obj))-1; i++)
   {
       void *wref = ADDR_OBJ(wp)[i];
-      void *parent = BAG_HEADER(wp);
-      if (wref) {
-	  JMarkFrom(parent, wref);
+      if (IS_BAG_REF(wref)) {
+	  if (wref) {
+	      JMarkFrom(parent, wref);
+	  }
       }
     }
   }
@@ -833,13 +847,13 @@ void SaveWPObj( Obj wpobj )
 {
   UInt len, i;
   Obj *ptr;
-  Obj x;
   ptr = ADDR_OBJ(wpobj)+1;
   len = STORED_LEN_WPOBJ(wpobj);
   SaveUInt(len);
   for (i = 1; i <= len; i++)
     {
-      x = *ptr;
+#ifndef USE_JULIA_GC
+      Obj x = *ptr;
       if (IS_WEAK_DEAD_BAG(x))
         {
           SaveSubObj(0);
@@ -848,6 +862,9 @@ void SaveWPObj( Obj wpobj )
       else
         SaveSubObj(x);
       ptr++;
+#else
+      SaveSubObj(ELM_WPOBJ(wpobj, i));
+#endif
     }
 }
 
@@ -865,7 +882,11 @@ void LoadWPObj( Obj wpobj )
   STORE_LEN_WPOBJ(wpobj, len);
   for (i = 1; i <= len; i++)
     {
+#ifndef USE_JULIA_GC
       *ptr++ = LoadSubObj();
+#else
+      SET_ELM_WPOBJ(wpobj, i, LoadSubObj());
+#endif
     }
 }
 

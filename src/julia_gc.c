@@ -390,7 +390,11 @@ static void TryMark(void * p)
 {
     jl_value_t * p2 = jl_pool_base_ptr(p);
     if (!p2) {
-        p2 = treap_find(bigvals, p);
+	// It is possible for p to point past the end of
+	// the object, so we subtract one word from the
+	// address. This is safe, as the object is preceded
+	// by a larger header.
+        p2 = treap_find(bigvals, (char *) p - 1);
         if (p2) {
             // It is possible for types to not be valid objects.
             // Objects with such types are not normally made visible

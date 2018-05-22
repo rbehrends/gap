@@ -794,6 +794,10 @@ extern void MarkOneSubBags( Bag bag );
 extern void MarkTwoSubBags( Bag bag );
 extern void MarkThreeSubBags( Bag bag );
 extern void MarkFourSubBags( Bag bag );
+extern void TryMarkOneSubBags( Bag bag );
+extern void TryMarkTwoSubBags( Bag bag );
+extern void TryMarkThreeSubBags( Bag bag );
+extern void TryMarkFourSubBags( Bag bag );
 
 
 /****************************************************************************
@@ -819,6 +823,8 @@ extern void MarkAllSubBags( Bag bag );
 extern void MarkAllSubBagsDefault ( Bag );
 
 extern void MarkAllButFirstSubBags( Bag bag );
+
+extern void MarkSubBagsByLength( Bag bag );
 
 /****************************************************************************
 **

@@ -718,8 +718,16 @@ void SwapMasterPoint(Bag bag1, Bag bag2)
 inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
+        if (JMark(bag) && OldObj)
+            YoungRef++;
+    }
+}
+
+inline void TryMarkBag(Bag bag)
+{
+    if (IS_BAG_REF(bag)) {
         void * p = jl_pool_base_ptr(bag);
-        if (p == bag) {
+        if (p == bag && jl_typeis(p, datatype_mptr)) {
             if (JMark(p) && OldObj)
                 YoungRef++;
         }
@@ -730,6 +738,13 @@ inline void MarkArrayOfBags(const Bag array[], UInt count)
 {
     for (UInt i = 0; i < count; i++) {
         MarkBag(array[i]);
+    }
+}
+
+inline void TryMarkArrayOfBags(const Bag array[], UInt count)
+{
+    for (UInt i = 0; i < count; i++) {
+        TryMarkBag(array[i]);
     }
 }
 
@@ -757,12 +772,45 @@ void MarkFourSubBags(Bag bag)
     MarkArrayOfBags(CONST_PTR_BAG(bag), 4);
 }
 
+void TryMarkOneSubBags(Bag bag)
+{
+    TryMarkArrayOfBags(CONST_PTR_BAG(bag), 1);
+}
+
+void TryMarkTwoSubBags(Bag bag)
+{
+    TryMarkArrayOfBags(CONST_PTR_BAG(bag), 2);
+}
+
+void TryMarkThreeSubBags(Bag bag)
+{
+    TryMarkArrayOfBags(CONST_PTR_BAG(bag), 3);
+}
+
+void TryMarkFourSubBags(Bag bag)
+{
+    TryMarkArrayOfBags(CONST_PTR_BAG(bag), 4);
+}
+
 void MarkAllSubBags(Bag bag)
 {
-    MarkArrayOfBags(CONST_PTR_BAG(bag), SIZE_BAG(bag) / sizeof(Bag));
+    TryMarkArrayOfBags(CONST_PTR_BAG(bag), SIZE_BAG(bag) / sizeof(Bag));
 }
 
 void MarkAllButFirstSubBags(Bag bag)
 {
     MarkArrayOfBags(CONST_PTR_BAG(bag) + 1, SIZE_BAG(bag) / sizeof(Bag) - 1);
 }
+
+void MarkSubBagsByLength(Bag bag)
+{
+    UInt len = LEN_PLIST(bag);
+    UInt size = SIZE_BAG(bag) / sizeof(Bag);
+    if (len >= size) {
+        MarkAllButFirstSubBags(bag);
+	return;
+    }
+    MarkArrayOfBags(CONST_PTR_BAG(bag) + 1, len);
+    TryMarkArrayOfBags(CONST_PTR_BAG(bag) + 1 + len, size - len - 1);
+}
+

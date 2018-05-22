@@ -718,10 +718,22 @@ void SwapMasterPoint(Bag bag1, Bag bag2)
 inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
-        void * p = jl_pool_base_ptr(bag);
-        if (p == bag) {
-            if (JMark(p) && OldObj)
-                YoungRef++;
+        jl_value_t * p = (jl_value_t *)bag;
+        if (jl_is_internal_obj_alloc(p) && jl_typeis(p, datatype_mptr)) {
+            switch (jl_astaggedvalue(p)->bits.gc) {
+            case 0:
+                if (JMark(p) && OldObj)
+                    YoungRef++;
+                break;
+	    case 1:
+                if (OldObj)
+                    YoungRef++;
+	        break;
+            case 2:
+                JMark(p);
+            case 3:
+	        break;
+            }
         }
     }
 }

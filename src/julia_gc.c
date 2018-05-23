@@ -18,6 +18,7 @@
 #include "sysmem.h"
 #include "system.h"
 #include "vars.h"
+#include "fibhash.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,25 @@
 
 #include "julia.h"
 #include "gcext.h"
+
+#define MARK_CACHE_BITS 16
+#define MARK_CACHE_SIZE (1 << MARK_CACHE_BITS)
+
+#define MARK_HASH(x) (FibHash((x), MARK_CACHE_BITS))
+
+// #define STAT_MARK_CACHE
+
+// The MarkCache exists to speed up the conservative tracing of
+// objects. While its performance benefit is minimal with the current
+// API functionality, it can significantly reduce overhead if a slower
+// conservative mechanism is used. It should be disabled for precise
+// object tracing, however. The cache does not affect conservative
+// *stack* tracing at all, only conservative tracing of objects.
+
+static Bag MarkCache[MARK_CACHE_SIZE];
+#ifdef STAT_MARK_CACHE
+static UInt MarkCacheHits, MarkCacheAttempts, MarkCacheCollisions;
+#endif
 
 
 enum { NTYPES = 256 };
@@ -409,6 +429,9 @@ static void TryMark(void * p)
             if (hdr->type != jl_pool_base_ptr(hdr->type))
                 return;
         }
+    } else {
+	if (jl_typeis(p2, datatype_mptr))
+	    MarkCache[MARK_HASH((UInt)p2)] = (Bag) p2;
     }
     if (p2) {
         JMark(p2);
@@ -487,6 +510,10 @@ static void PreGCHook(int full)
 {
     /* information at the beginning of garbage collections                 */
     SyMsgsBags(full, 0, 0);
+    memset(MarkCache, 0, sizeof(MarkCache));
+#ifdef STAT_MARK_CACHE
+    MarkCacheHits = MarkCacheAttempts = MarkCacheCollisions = 0;
+#endif
 }
 
 static void PostGCHook(int full)
@@ -494,6 +521,13 @@ static void PostGCHook(int full)
     /* information at the end of garbage collections                 */
     UInt totalAlloc = 0;    // FIXME -- is this data even available?
     SyMsgsBags(full, 6, totalAlloc);
+#ifdef STAT_MARK_CACHE
+    /* printf("\n>>>Attempts: %ld\nHit rate: %lf\nCollision rate: %lf\n",
+      (long) MarkCacheAttempts,
+      (double) MarkCacheHits/(double)MarkCacheAttempts,
+      (double) MarkCacheCollisions/(double)MarkCacheAttempts
+      ); */
+#endif
 }
 
 // helper function to test if Julia considers an object to
@@ -716,22 +750,37 @@ inline void MarkBag(Bag bag)
 {
     if (IS_BAG_REF(bag)) {
         jl_value_t * p = (jl_value_t *)bag;
-        if (jl_is_internal_obj_alloc(p) && jl_typeis(p, datatype_mptr)) {
-            switch (jl_astaggedvalue(p)->bits.gc) {
-            case 0:
-                if (JMark(p) && OldObj)
-                    YoungRef++;
-                break;
-	    case 1:
-                if (OldObj)
-                    YoungRef++;
-	        break;
-            case 2:
-                JMark(p);
-            case 3:
-	        break;
-            }
-        }
+#ifdef STAT_MARK_CACHE
+	MarkCacheAttempts++;
+#endif
+        UInt hash = MARK_HASH((UInt) bag);
+	if (MarkCache[hash] == bag) {
+#ifdef STAT_MARK_CACHE
+            MarkCacheHits++;
+#endif
+	} else
+        if (!jl_is_internal_obj_alloc(p) || !jl_typeis(p, datatype_mptr)) {
+	    return;
+	}
+#ifdef STAT_MARK_CACHE
+	if (MarkCache[hash])
+	    MarkCacheCollisions++;
+#endif
+	MarkCache[hash] = bag;
+	switch (jl_astaggedvalue(p)->bits.gc) {
+	case 0:
+	    if (JMark(p) && OldObj)
+		YoungRef++;
+	    break;
+	case 1:
+	    if (OldObj)
+		YoungRef++;
+	    break;
+	case 2:
+	    JMark(p);
+	case 3:
+	    break;
+	}
     }
 }
 

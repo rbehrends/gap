@@ -103,7 +103,7 @@
 **
 *F  ELM_WPOBJ(<wp>,<pos>) . . . . . . . . . . . . . element of a WP object
 **
-**  'ELM_WPOBJ' return the <wp>-th element of the WP object <wp>.  <pos> must
+**  'ELM_WPOBJ' return the <pos>-th element of the WP object <wp>. <pos> must
 **  be a positive integer less than or equal  to the physical length of <wp>.
 **  If <wp> has no assigned element at position <pos>, 'ELM_WPOBJ' returns 0.
 **

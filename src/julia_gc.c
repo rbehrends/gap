@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include "julia.h"
-#include "gcext.h"
+#include "julia_gcext.h"
 
 #define MARK_CACHE_BITS 16
 #define MARK_CACHE_SIZE (1 << MARK_CACHE_BITS)
@@ -381,15 +381,15 @@ static void * AllocateBagMemory(UInt type, UInt size)
     // HOOK: return `size` bytes memory of TNUM `type`.
     void * result;
     if (size <= max_pool_obj_size) {
-        result = (void *)jl_extend_gc_alloc(JContext, size, datatype_bag);
+        result = (void *)jl_gc_alloc_typed(JContext, size, datatype_bag);
     }
     else {
         result =
-            (void *)jl_extend_gc_alloc(JContext, size, datatype_largebag);
+            (void *)jl_gc_alloc_typed(JContext, size, datatype_largebag);
     }
     memset(result, 0, size);
     if (TabFreeFuncBags[type])
-        jl_extend_gc_set_needs_finalizer((jl_value_t *)result);
+        jl_gc_set_needs_foreign_finalizer((jl_value_t *)result);
     return result;
 }
 
@@ -408,7 +408,7 @@ static inline int JMark(void * obj)
 
 static void TryMark(void * p)
 {
-    jl_value_t * p2 = jl_pool_base_ptr(p);
+    jl_value_t * p2 = jl_gc_internal_obj_base_ptr(p);
     if (!p2) {
         // It is possible for p to point past the end of
         // the object, so we subtract one word from the
@@ -420,13 +420,13 @@ static void TryMark(void * p)
             // Objects with such types are not normally made visible
             // to the mark loop, so we need to avoid marking them
             // during conservative stack scanning.
-            // While jl_pool_base_ptr(p) already eliminates this
+            // While jl_gc_internal_obj_base_ptr(p) already eliminates this
             // case, it can still happen for bigval_t objects, so
             // we run an explicit check that the type is a valid
             // object for these.
             p2 = (jl_value_t *)((char *)p2 + bigval_startoffset);
             jl_taggedvalue_t * hdr = jl_astaggedvalue(p2);
-            if (hdr->type != jl_pool_base_ptr(hdr->type))
+            if (hdr->type != jl_gc_internal_obj_base_ptr(hdr->type))
                 return;
         }
     } else {
@@ -578,20 +578,19 @@ static void SetJuliaContext(int tid, int index, void *data)
 void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
 {
     // HOOK: initialization happens here.
-    jl_root_scanner_hook = GapRootScanner;
-    jl_task_scanner_hook = GapTaskScanner;
-    jl_gc_disable_generational = 0;
-    jl_nonpool_alloc_hook = alloc_bigval;
-    jl_nonpool_free_hook = free_bigval;
-    jl_pre_gc_hook = PreGCHook;
-    jl_post_gc_hook = PostGCHook;
-    jl_gc_set_context_hook = SetJuliaContext;
+    jl_set_gc_root_scanner_hook(GapRootScanner);
+    jl_set_gc_task_scanner_hook(GapTaskScanner);
+    jl_set_gc_external_obj_alloc_hook(alloc_bigval);
+    jl_set_gc_external_obj_free_hook(free_bigval);
+    jl_set_pre_gc_hook(PreGCHook);
+    jl_set_post_gc_hook(PostGCHook);
+    jl_set_gc_context_hook(SetJuliaContext);
 
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
     jl_extend_init();
     // jl_gc_enable(0); /// DEBUGGING
-    max_pool_obj_size = jl_extend_gc_max_pool_obj_size();
+    max_pool_obj_size = jl_gc_max_internal_obj_size();
 
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     Module->parent = jl_main_module;
@@ -680,7 +679,7 @@ Bag NewBag(UInt type, UInt size)
     header->size = size;
 
     // allocate the new masterpointer
-    bag = jl_extend_gc_alloc(JContext, sizeof(void *), datatype_mptr);
+    bag = jl_gc_alloc_typed(JContext, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, DATA(header));
 
     // return the identifier of the new bag
@@ -759,7 +758,7 @@ inline void MarkBag(Bag bag)
             MarkCacheHits++;
 #endif
 	} else
-        if (!jl_is_internal_obj_alloc(p) || !jl_typeis(p, datatype_mptr)) {
+        if (!jl_gc_is_internal_obj_alloc(p) || !jl_typeis(p, datatype_mptr)) {
 	    return;
 	}
 #ifdef STAT_MARK_CACHE

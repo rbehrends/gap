@@ -352,8 +352,8 @@ static jl_module_t *   Module;
 static jl_datatype_t * datatype_mptr;
 static jl_datatype_t * datatype_bag;
 static jl_datatype_t * datatype_largebag;
-static void *          GapStackBottom = NULL;
-static size_t          GapStackAlign = sizeof(Int);
+static Bag *           StackBottomBags;
+static UInt            StackAlignBags;
 static void *          JContext[JL_GC_CONTEXT_SIZE];
 static size_t          max_pool_obj_size;
 static size_t          bigval_startoffset;
@@ -445,10 +445,10 @@ static void TryMarkRange(void * start, void * end)
         SWAP(void *, start, end);
     }
     char * p = align_ptr(start);
-    char * q = (char *)end - sizeof(void *) + GapStackAlign;
+    char * q = (char *)end - sizeof(void *) + StackAlignBags;
     while (lt_ptr(p, q)) {
         TryMark(*(void **)p);
-        p += GapStackAlign;
+        p += StackAlignBags;
     }
 }
 
@@ -480,7 +480,7 @@ void GapRootScanner(int full)
     syJmp_buf registers;
     sySetjmp(registers);
     TryMarkRange(registers, (char *)registers + sizeof(syJmp_buf));
-    TryMarkRange((char *)registers + sizeof(syJmp_buf), GapStackBottom);
+    TryMarkRange((char *)registers + sizeof(syJmp_buf), StackBottomBags);
 
     // mark all global objects
     for (Int i = 0; i < GlobalCount; i++) {
@@ -615,8 +615,8 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     GAP_ASSERT(jl_is_datatype(datatype_mptr));
     GAP_ASSERT(jl_is_datatype(datatype_bag));
     GAP_ASSERT(jl_is_datatype(datatype_largebag));
-    GapStackBottom = stack_bottom;
-    GapStackAlign = stack_align;
+    StackBottomBags = stack_bottom;
+    StackAlignBags = stack_align;
 }
 
 UInt CollectBags(UInt size, UInt full)

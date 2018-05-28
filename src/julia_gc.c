@@ -429,9 +429,10 @@ static void TryMark(void * p)
             if (hdr->type != jl_gc_internal_obj_base_ptr(hdr->type))
                 return;
         }
-    } else {
-	if (jl_typeis(p2, datatype_mptr))
-	    MarkCache[MARK_HASH((UInt)p2)] = (Bag) p2;
+    }
+    else {
+        if (jl_typeis(p2, datatype_mptr))
+            MarkCache[MARK_HASH((UInt)p2)] = (Bag)p2;
     }
     if (p2) {
         JMark(p2);
@@ -748,36 +749,37 @@ inline void MarkBag(Bag bag)
     if (IS_BAG_REF(bag)) {
         jl_value_t * p = (jl_value_t *)bag;
 #ifdef STAT_MARK_CACHE
-	MarkCacheAttempts++;
+        MarkCacheAttempts++;
 #endif
-        UInt hash = MARK_HASH((UInt) bag);
-	if (MarkCache[hash] == bag) {
+        UInt hash = MARK_HASH((UInt)bag);
+        if (MarkCache[hash] == bag) {
 #ifdef STAT_MARK_CACHE
             MarkCacheHits++;
 #endif
-	} else
-        if (!jl_gc_is_internal_obj_alloc(p) || !jl_typeis(p, datatype_mptr)) {
-	    return;
-	}
+        }
+        else if (!jl_gc_is_internal_obj_alloc(p) ||
+                 !jl_typeis(p, datatype_mptr)) {
+            return;
+        }
 #ifdef STAT_MARK_CACHE
-	if (MarkCache[hash])
-	    MarkCacheCollisions++;
+        if (MarkCache[hash])
+            MarkCacheCollisions++;
 #endif
-	MarkCache[hash] = bag;
-	switch (jl_astaggedvalue(p)->bits.gc) {
-	case 0:
-	    if (JMark(p) && OldObj)
-		YoungRef++;
-	    break;
-	case 1:
-	    if (OldObj)
-		YoungRef++;
-	    break;
-	case 2:
-	    JMark(p);
-	case 3:
-	    break;
-	}
+        MarkCache[hash] = bag;
+        switch (jl_astaggedvalue(p)->bits.gc) {
+        case 0:
+            if (JMark(p) && OldObj)
+                YoungRef++;
+            break;
+        case 1:
+            if (OldObj)
+                YoungRef++;
+            break;
+        case 2:
+            JMark(p);
+        case 3:
+            break;
+        }
     }
 }
 

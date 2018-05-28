@@ -405,6 +405,31 @@ static inline int JMark(void * obj)
     return jl_gc_mark_queue_obj(JContext, obj);
 }
 
+// Overview of conservative stack scanning
+//
+// A key aspect of conservative marking is that (1) we need to determine
+// whether a machine word is a pointer to a live object and (2) if it points
+// to the interior of the object, to determine its base address.
+//
+// For Julia's internal objects, we call back to Julia to find out the
+// necessary information. For external objects that we allocate ourselves in
+// `alloc_bigval()`, we use balanced binary trees (treaps) to determine that
+// information. Each node in such a tree contains an (address, size) pair
+// and we use the usual binary tree search to figure out whether there is a
+// node with an address range containing that address and, if so, returns
+// the `address` part of the pair.
+//
+// While at the C level, we will generally always have a reference to the
+// masterpointer, the presence of optimizing compilers, multiple threads, or
+// Julia tasks (= coroutines) means that we cannot necessarily rely on this
+// information; also, the `NewBag()` implementation may trigger a GC after
+// allocating the bag contents, but before allocating the master pointer.
+//
+// As a consequence, we play it safe and assume that any word anywhere on
+// the stack (including Julia task stacks) that points to a master pointer
+// or the contents of a bag (including a location after the start of the
+// bag) indicates a valid reference that needs to be marked.
+
 static void TryMark(void * p)
 {
     jl_value_t * p2 = jl_gc_internal_obj_base_ptr(p);
@@ -437,7 +462,6 @@ static void TryMark(void * p)
         JMark(p2);
     }
 }
-
 
 static void TryMarkRange(void * start, void * end)
 {

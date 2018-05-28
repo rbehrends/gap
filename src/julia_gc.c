@@ -118,12 +118,12 @@ static inline int lt_ptr(void * a, void * b)
     return (uintptr_t)a < (uintptr_t)b;
 }
 
+#if 0
 static inline int gt_ptr(void * a, void * b)
 {
     return (uintptr_t)a > (uintptr_t)b;
 }
 
-#if 0
 static inline void *max_ptr(void *a, void *b)
 {
     if ((uintptr_t) a > (uintptr_t) b)
@@ -440,10 +440,8 @@ static void TryMark(void * p)
 
 static void TryMarkRange(void * start, void * end)
 {
-    if (gt_ptr(start, end)) {
-        void * t = start;
-        start = end;
-        end = t;
+    if (lt_ptr(end, start)) {
+        SWAP(void *, start, end);
     }
     char * p = align_ptr(start);
     char * q = (char *) end - sizeof(void *) + GapStackAlign;

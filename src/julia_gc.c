@@ -498,10 +498,10 @@ void GapRootScanner(int full)
     MarkStackFrames(STATE(CurrLVars));
 }
 
-void GapTaskScanner(jl_task_t *task, int root_task)
+void GapTaskScanner(jl_task_t * task, int root_task)
 {
     if (task->stkbuf) {
-       TryMarkRange(task->stkbuf, (char *)task->stkbuf + task->bufsz);
+        TryMarkRange(task->stkbuf, (char *)task->stkbuf + task->bufsz);
     }
 }
 

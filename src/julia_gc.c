@@ -384,8 +384,7 @@ static void * AllocateBagMemory(UInt type, UInt size)
         result = (void *)jl_gc_alloc_typed(JContext, size, datatype_bag);
     }
     else {
-        result =
-            (void *)jl_gc_alloc_typed(JContext, size, datatype_largebag);
+        result = (void *)jl_gc_alloc_typed(JContext, size, datatype_largebag);
     }
     memset(result, 0, size);
     if (TabFreeFuncBags[type])
@@ -439,13 +438,14 @@ static void TryMark(void * p)
     }
 }
 
+
 static void TryMarkRange(void * start, void * end)
 {
     if (lt_ptr(end, start)) {
         SWAP(void *, start, end);
     }
     char * p = align_ptr(start);
-    char * q = (char *) end - sizeof(void *) + GapStackAlign;
+    char * q = (char *)end - sizeof(void *) + GapStackAlign;
     while (lt_ptr(p, q)) {
         TryMark(*(void **)p);
         p += GapStackAlign;
@@ -566,10 +566,10 @@ void JMarkFrom(void * parent, void * ref)
         jl_gc_mark_push_remset(JContext, parent, 1);
 }
 
-static void SetJuliaContext(int tid, int index, void *data)
+static void SetJuliaContext(int tid, int index, void * data)
 {
     if (tid > 0)
-      return;
+        return;
     JContext[index] = data;
 }
 
@@ -606,7 +606,8 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     // export datatypes to Julia level
     jl_set_const(Module, jl_symbol("MPtr"), (jl_value_t *)datatype_mptr);
     jl_set_const(Module, jl_symbol("Bag"), (jl_value_t *)datatype_bag);
-    jl_set_const(Module, jl_symbol("LargeBag"), (jl_value_t *)datatype_largebag);
+    jl_set_const(Module, jl_symbol("LargeBag"),
+                 (jl_value_t *)datatype_largebag);
 
     void * tmp = AllocateBagMemory(T_STRING, max_pool_obj_size + 1);
     void * tmpstart = treap_find(bigvals, tmp);

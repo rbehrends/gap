@@ -71,7 +71,7 @@ void InitFreeFuncBag(UInt type, TNumFreeFuncBags finalizer_func)
     TabFreeFuncBags[type] = finalizer_func;
 }
 
-void JFinalizer(void * obj)
+void JFinalizer(jl_value_t * obj)
 {
     BagHeader * hdr = (BagHeader *)obj;
     Bag         contents = (Bag)(hdr + 1);
@@ -402,7 +402,7 @@ void InitMarkFuncBags(UInt type, TNumMarkFuncBags mark_func)
 
 static inline int JMark(void * obj)
 {
-    return jl_gc_mark_queue_obj(JContext, obj);
+    return jl_gc_mark_queue_obj(JContext, (jl_value_t *)obj);
 }
 
 // Overview of conservative stack scanning
@@ -562,17 +562,17 @@ static inline int GcOld(void * p)
 
 // the Julia marking function for master pointer objects (i.e., this function
 // is called by the Julia GC whenever it marks a GAP master pointer object)
-static void JMarkMPtr(void * obj)
+static void JMarkMPtr(int tid, jl_value_t * obj)
 {
     if (!*(void **)obj)
         return;
-    if (JMark(BAG_HEADER(obj)) && GcOld(obj))
+    if (JMark(BAG_HEADER((Bag)obj)) && GcOld(obj))
         jl_gc_mark_push_remset(JContext, obj, 1);
 }
 
 // the Julia marking function for bags (i.e., this function is called by the
 // Julia GC whenever it marks a GAP bag object)
-static void JMarkBag(void * obj)
+static void JMarkBag(int tid, jl_value_t * obj)
 {
     BagHeader * hdr = (BagHeader *)obj;
     Bag         contents = (Bag)(hdr + 1);

@@ -9,6 +9,8 @@
 **  and gasman.c for two other garbage collector implementations.
 **/
 
+#define JULIA_ENABLE_THREADING
+
 #include "code.h"
 #include "funcs.h"
 #include "gapstate.h"
@@ -611,7 +613,8 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
 
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
-    jl_extend_init();
+    jl_init();
+    jl_init_gc_context();
     // jl_gc_enable(0); /// DEBUGGING
     max_pool_obj_size = jl_gc_max_internal_obj_size();
 

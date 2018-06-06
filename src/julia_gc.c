@@ -488,14 +488,6 @@ void CHANGED_BAG(Bag bag)
     jl_gc_wb_back(BAG_HEADER(bag));
 }
 
-static void MarkStackFrames(Bag frame)
-{
-    for (; frame; frame = PARENT_LVARS(frame)) {
-        JMark(frame);
-        JMark(BAG_HEADER(frame));
-    }
-}
-
 void GapRootScanner(int full)
 {
     // mark our Julia module (this contains references to our custom data
@@ -515,13 +507,6 @@ void GapRootScanner(int full)
             JMark(p);
         }
     }
-
-    // scan the GAP call stack, too
-    // FIXME: is this really necessary? STATE(CurrLVars) is already marked as
-    // a global object (via GlobalAddr above), and it is the head of a linked
-    // list containing the others, so it should not be necessary (and a quick
-    // test confirms this
-    MarkStackFrames(STATE(CurrLVars));
 }
 
 void GapTaskScanner(jl_task_t * task, int root_task)

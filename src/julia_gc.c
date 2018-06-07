@@ -360,7 +360,6 @@ static void *          JContext[JL_GC_CONTEXT_SIZE];
 static size_t          max_pool_obj_size;
 static size_t          bigval_startoffset;
 static UInt            YoungRef;
-static int             OldObj;
 
 
 #ifndef NR_GLOBAL_BAGS
@@ -540,41 +539,33 @@ static void PostGCHook(int full)
 #endif
 }
 
-// helper function to test if Julia considers an object to
-// be in the old generation
-static inline int GcOld(void * p)
-{
-    return (jl_astaggedvalue(p)->bits.gc & 2) != 0;
-}
-
 // the Julia marking function for master pointer objects (i.e., this function
 // is called by the Julia GC whenever it marks a GAP master pointer object)
-static void JMarkMPtr(int tid, jl_value_t * obj)
+static uintptr_t JMarkMPtr(int tid, jl_value_t * obj)
 {
     if (!*(void **)obj)
-        return;
-    if (JMark(BAG_HEADER((Bag)obj)) && GcOld(obj))
-        jl_gc_mark_push_remset(JContext, obj, 1);
+        return 0;
+    if (JMark(BAG_HEADER((Bag)obj)))
+        return 1;
+    return 0;
 }
 
 // the Julia marking function for bags (i.e., this function is called by the
 // Julia GC whenever it marks a GAP bag object)
-static void JMarkBag(int tid, jl_value_t * obj)
+static uintptr_t JMarkBag(int tid, jl_value_t * obj)
 {
     BagHeader * hdr = (BagHeader *)obj;
     Bag         contents = (Bag)(hdr + 1);
     UInt        tnum = hdr->type;
     YoungRef = 0;
-    OldObj = GcOld(obj);
     TabMarkFuncBags[tnum]((Bag)&contents);
-    if (OldObj && YoungRef)
-        jl_gc_mark_push_remset(JContext, obj, YoungRef);
+    return YoungRef;
 }
 
-void JMarkFrom(void * parent, void * ref)
+void JMarkRef(void * ref)
 {
-    if (JMark(ref) && GcOld(parent))
-        jl_gc_mark_push_remset(JContext, parent, 1);
+    if (JMark(ref))
+        YoungRef++;
 }
 
 static void SetJuliaContext(int tid, int index, void * data)
@@ -779,12 +770,11 @@ inline void MarkBag(Bag bag)
         MarkCache[hash] = bag;
         switch (jl_astaggedvalue(p)->bits.gc) {
         case 0:
-            if (JMark(p) && OldObj)
+            if (JMark(p))
                 YoungRef++;
             break;
         case 1:
-            if (OldObj)
-                YoungRef++;
+	    YoungRef++;
             break;
         case 2:
             JMark(p);

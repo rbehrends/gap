@@ -627,18 +627,17 @@ static void SweepWeakPointerObj( Bag *src, Bag *dst, UInt len)
 
 #elif defined(USE_JULIA_GC)
 
-extern void JMarkFrom(void *parent, void *ref);
+extern void JMarkRef(void *ref);
 
 static void MarkWeakPointerObj(Obj wp)
 {
     Int i;
     /* can't use the stored length here, in case we
        are in the middle of copying */
-    void * parent = BAG_HEADER(wp);
     for (i = 1; i <= (SIZE_BAG(wp) / sizeof(Obj)) - 1; i++) {
         void * wref = ADDR_OBJ(wp)[i];
         if (IS_BAG_REF(wref)) {
-            JMarkFrom(parent, wref);
+            JMarkRef(wref);
         }
     }
 }

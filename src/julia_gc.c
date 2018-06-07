@@ -595,13 +595,14 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     jl_set_pre_gc_hook(PreGCHook);
     jl_set_post_gc_hook(PostGCHook);
     jl_set_gc_context_hook(SetJuliaContext);
+    max_pool_obj_size = jl_gc_max_internal_obj_size();
+    bigval_startoffset = jl_gc_external_obj_hdr_size();
 
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
     jl_init();
     jl_init_gc_context();
     // jl_gc_enable(0); /// DEBUGGING
-    max_pool_obj_size = jl_gc_max_internal_obj_size();
 
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     Module->parent = jl_main_module;
@@ -621,9 +622,6 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     jl_set_const(Module, jl_symbol("LargeBag"),
                  (jl_value_t *)datatype_largebag);
 
-    void * tmp = AllocateBagMemory(T_STRING, max_pool_obj_size + 1);
-    void * tmpstart = treap_find(bigvals, tmp);
-    bigval_startoffset = (char *)tmp - (char *)tmpstart;
     GAP_ASSERT(jl_is_datatype(datatype_mptr));
     GAP_ASSERT(jl_is_datatype(datatype_bag));
     GAP_ASSERT(jl_is_datatype(datatype_largebag));

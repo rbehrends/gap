@@ -333,7 +333,6 @@ static treap_t * bigvals;
 void * alloc_bigval(size_t size)
 {
     void * result = malloc(size);
-    memset(result, 0, size);
     treap_t * node = alloc_treap();
     node->addr = result;
     node->size = size;

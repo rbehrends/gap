@@ -356,7 +356,7 @@ static jl_datatype_t * datatype_bag;
 static jl_datatype_t * datatype_largebag;
 static Bag *           StackBottomBags;
 static UInt            StackAlignBags;
-static void *          JContext[JL_GC_CONTEXT_SIZE];
+static jl_ptls_t       JuliaTLS, SaveTLS;
 static size_t          max_pool_obj_size;
 static size_t          bigval_startoffset;
 static UInt            YoungRef;
@@ -382,10 +382,10 @@ static void * AllocateBagMemory(UInt type, UInt size)
     // HOOK: return `size` bytes memory of TNUM `type`.
     void * result;
     if (size <= max_pool_obj_size) {
-        result = (void *)jl_gc_alloc_typed(JContext, size, datatype_bag);
+        result = (void *)jl_gc_alloc_typed(JuliaTLS, size, datatype_bag);
     }
     else {
-        result = (void *)jl_gc_alloc_typed(JContext, size, datatype_largebag);
+        result = (void *)jl_gc_alloc_typed(JuliaTLS, size, datatype_largebag);
     }
     memset(result, 0, size);
     if (TabFreeFuncBags[type])
@@ -403,7 +403,7 @@ void InitMarkFuncBags(UInt type, TNumMarkFuncBags mark_func)
 
 static inline int JMark(void * obj)
 {
-    return jl_gc_mark_queue_obj(JContext, (jl_value_t *)obj);
+    return jl_gc_mark_queue_obj(JuliaTLS, (jl_value_t *)obj);
 }
 
 // Overview of conservative stack scanning
@@ -517,6 +517,13 @@ void GapTaskScanner(jl_task_t * task, int root_task)
 
 static void PreGCHook(int full)
 {
+    // It is possible for the garbage collector to be invoked from a
+    // different thread other than the main thread that is running
+    // GAP. So we save the TLS pointer temporarily and restore it
+    // afterwards. In the long run, JuliaTLS needs to simply become
+    // a thread-local variable.
+    SaveTLS = JuliaTLS;
+    JuliaTLS = jl_get_ptls_states();
     /* information at the beginning of garbage collections                 */
     SyMsgsBags(full, 0, 0);
     memset(MarkCache, 0, sizeof(MarkCache));
@@ -527,6 +534,7 @@ static void PreGCHook(int full)
 
 static void PostGCHook(int full)
 {
+    JuliaTLS = SaveTLS;
     /* information at the end of garbage collections                 */
     UInt totalAlloc = 0;    // FIXME -- is this data even available?
     SyMsgsBags(full, 6, totalAlloc);
@@ -541,7 +549,7 @@ static void PostGCHook(int full)
 
 // the Julia marking function for master pointer objects (i.e., this function
 // is called by the Julia GC whenever it marks a GAP master pointer object)
-static uintptr_t JMarkMPtr(int tid, jl_value_t * obj)
+static uintptr_t JMarkMPtr(jl_ptls_t ptls, jl_value_t * obj)
 {
     if (!*(void **)obj)
         return 0;
@@ -552,7 +560,7 @@ static uintptr_t JMarkMPtr(int tid, jl_value_t * obj)
 
 // the Julia marking function for bags (i.e., this function is called by the
 // Julia GC whenever it marks a GAP bag object)
-static uintptr_t JMarkBag(int tid, jl_value_t * obj)
+static uintptr_t JMarkBag(jl_ptls_t ptls, jl_value_t * obj)
 {
     BagHeader * hdr = (BagHeader *)obj;
     Bag         contents = (Bag)(hdr + 1);
@@ -568,31 +576,25 @@ void JMarkRef(void * ref)
         YoungRef++;
 }
 
-static void SetJuliaContext(int tid, int index, void * data)
-{
-    if (tid > 0)
-        return;
-    JContext[index] = data;
-}
-
-
 void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
 {
     // HOOK: initialization happens here.
-    jl_set_gc_root_scanner_hook(GapRootScanner);
-    jl_set_gc_task_scanner_hook(GapTaskScanner);
-    jl_set_gc_external_obj_alloc_hook(alloc_bigval);
-    jl_set_gc_external_obj_free_hook(free_bigval);
-    jl_set_pre_gc_hook(PreGCHook);
-    jl_set_post_gc_hook(PostGCHook);
-    jl_set_gc_context_hook(SetJuliaContext);
-    max_pool_obj_size = jl_gc_max_internal_obj_size();
-    bigval_startoffset = jl_gc_external_obj_hdr_size();
-
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
+    // These hooks need to be set before initialization so
+    // that we can track objects allocated during `jl_init()`.
+    jl_set_gc_external_obj_alloc_hook(alloc_bigval);
+    jl_set_gc_external_obj_free_hook(free_bigval);
+    bigval_startoffset = jl_gc_external_obj_hdr_size();
+    max_pool_obj_size = jl_gc_max_internal_obj_size();
     jl_init();
-    jl_init_gc_context();
+    JuliaTLS = jl_get_ptls_states();
+    // These hooks potentially require access to the Julia
+    // TLS and thus need to be installed after initialization.
+    jl_set_gc_root_scanner_hook(GapRootScanner);
+    jl_set_gc_task_scanner_hook(GapTaskScanner);
+    jl_set_pre_gc_hook(PreGCHook);
+    jl_set_post_gc_hook(PostGCHook);
     // jl_gc_enable(0); /// DEBUGGING
 
     Module = jl_new_module(jl_symbol("ForeignGAP"));
@@ -680,7 +682,7 @@ Bag NewBag(UInt type, UInt size)
     header->size = size;
 
     // allocate the new masterpointer
-    bag = jl_gc_alloc_typed(JContext, sizeof(void *), datatype_mptr);
+    bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, DATA(header));
 
     // return the identifier of the new bag

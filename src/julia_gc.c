@@ -330,22 +330,19 @@ static uint64_t xorshift_rng(void)
 
 static treap_t * bigvals;
 
-void * alloc_bigval(size_t size)
+void register_bigval(void *addr, size_t size)
 {
-    void * result = malloc(size);
     treap_t * node = alloc_treap();
-    node->addr = result;
+    node->addr = addr;
     node->size = size;
     node->prio = xorshift_rng();
     treap_insert(&bigvals, node);
-    return result;
 }
 
-void free_bigval(void * p)
+void deregister_bigval(void *p)
 {
     if (p) {
         treap_delete(&bigvals, p);
-        free(p);
     }
 }
 
@@ -575,25 +572,29 @@ void JMarkRef(void * ref)
         YoungRef++;
 }
 
+static jl_gc_hooks_t JuliaGCHooks = {
+    .root_scanner_hook = GapRootScanner,
+    .task_scanner_hook = GapTaskScanner,
+    .pre_gc_hook = PreGCHook,
+    .post_gc_hook = PostGCHook,
+    .register_bigval = register_bigval,
+    .deregister_bigval = deregister_bigval,
+};
+
 void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
 {
     // HOOK: initialization happens here.
     for (UInt i = 0; i < NTYPES; i++)
         TabMarkFuncBags[i] = MarkAllSubBags;
+
     // These hooks need to be set before initialization so
     // that we can track objects allocated during `jl_init()`.
-    jl_set_gc_external_obj_alloc_hook(alloc_bigval);
-    jl_set_gc_external_obj_free_hook(free_bigval);
+    jl_register_gc_hooks(&JuliaGCHooks);
+
     bigval_startoffset = jl_gc_external_obj_hdr_size();
     max_pool_obj_size = jl_gc_max_internal_obj_size();
     jl_init();
     JuliaTLS = jl_get_ptls_states();
-    // These hooks potentially require access to the Julia
-    // TLS and thus need to be installed after initialization.
-    jl_set_gc_root_scanner_hook(GapRootScanner);
-    jl_set_gc_task_scanner_hook(GapTaskScanner);
-    jl_set_pre_gc_hook(PreGCHook);
-    jl_set_post_gc_hook(PostGCHook);
     // jl_gc_enable(0); /// DEBUGGING
 
     Module = jl_new_module(jl_symbol("ForeignGAP"));

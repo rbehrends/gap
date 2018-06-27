@@ -31,6 +31,11 @@
 #include "julia.h"
 #include "julia_gcext.h"
 
+// if DISABLE_BIGVAL_TRACKING is defined, we don't track the location of
+// large bags; this speeds up some things, but may expose bugs in GAP code
+// which incorrectly holds pointers into bags over a GC.
+//#define DISABLE_BIGVAL_TRACKING
+
 #define MARK_CACHE_BITS 16
 #define MARK_CACHE_SIZE (1 << MARK_CACHE_BITS)
 
@@ -94,6 +99,8 @@ static void JFinalizer(jl_value_t * obj)
         TabFreeFuncBags[tnum]((Bag)&contents);
 }
 
+#if !defined(DISABLE_BIGVAL_TRACKING)
+
 /****************************************************************************
 **
 **  Treap functionality
@@ -126,6 +133,7 @@ static inline int cmp_ptr(void * p, void * q)
     else
         return 0;
 }
+#endif
 
 static inline int lt_ptr(void * a, void * b)
 {
@@ -162,6 +170,8 @@ static inline void * align_ptr(void * p)
     u &= ~(sizeof(p) - 1);
     return (void *)u;
 }
+
+#if !defined(DISABLE_BIGVAL_TRACKING)
 
 typedef struct treap_t {
     struct treap_t *left, *right;
@@ -358,6 +368,8 @@ static void free_bigval(void * p)
     }
 }
 
+#endif
+
 static jl_module_t *   Module;
 static jl_datatype_t * datatype_mptr;
 static jl_datatype_t * datatype_bag;
@@ -366,7 +378,9 @@ static UInt            StackAlignBags;
 static Bag *           GapStackBottom;
 static jl_ptls_t       JuliaTLS, SaveTLS;
 static size_t          max_pool_obj_size;
+#if !defined(DISABLE_BIGVAL_TRACKING)
 static size_t          bigval_startoffset;
+#endif
 static UInt            YoungRef;
 
 
@@ -443,6 +457,7 @@ static void TryMark(void * p)
 {
     jl_value_t * p2 = jl_gc_internal_obj_base_ptr(p);
     if (!p2) {
+#if !defined(DISABLE_BIGVAL_TRACKING)
         // It is possible for p to point past the end of
         // the object, so we subtract one word from the
         // address. This is safe, as the object is preceded
@@ -462,6 +477,7 @@ static void TryMark(void * p)
             if (hdr->type != jl_gc_internal_obj_base_ptr(hdr->type))
                 return;
         }
+#endif
     }
     else {
         // Prepopulate the mark cache with references we know
@@ -653,9 +669,11 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
         TabMarkFuncBags[i] = MarkAllSubBags;
     // These callbacks need to be set before initialization so
     // that we can track objects allocated during `jl_init()`.
+#if !defined(DISABLE_BIGVAL_TRACKING)
     jl_gc_set_cb_notify_external_alloc(alloc_bigval, 1);
     jl_gc_set_cb_notify_external_free(free_bigval, 1);
     bigval_startoffset = jl_gc_external_obj_hdr_size();
+#endif
     max_pool_obj_size = jl_gc_max_internal_obj_size();
     jl_gc_enable_conservative_gc_support();
     jl_init();
@@ -764,15 +782,27 @@ Bag NewBag(UInt type, UInt size)
     if (size == 0)
         alloc_size++;
 
+#if defined(DISABLE_BIGVAL_TRACKING)
+    bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
+    SET_PTR_BAG(bag, 0);
+#endif
+
     BagHeader * header = AllocateBagMemory(type, alloc_size);
 
     header->type = type;
     header->flags = 0;
     header->size = size;
 
+
+#if !defined(DISABLE_BIGVAL_TRACKING)
     // allocate the new masterpointer
     bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, DATA(header));
+#else
+    // change the masterpointer to reference the new bag memory
+    SET_PTR_BAG(bag, DATA(header));
+    jl_gc_wb_back((void *)bag);
+#endif
 
     // return the identifier of the new bag
     return bag;

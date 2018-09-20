@@ -1281,4 +1281,20 @@ void ReadGuardError(Obj o)
 }
 #endif
 
+// These are temporary debugging functions.
+
+Int NumReadErrors = 0;
+Int NumWriteErrors = 0;
+volatile int GuardDummy;
+
+PURE_FUNC int HandleReadGuardError(Bag bag) {
+    NumReadErrors++;
+    return 0;
+}
+
+PURE_FUNC int HandleWriteGuardError(Bag bag) {
+    NumWriteErrors++;
+    return 0;
+}
+
 #endif

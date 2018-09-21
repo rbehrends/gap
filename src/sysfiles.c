@@ -2445,8 +2445,14 @@ Char * syFgets (
         /* now perform the requested action <rep> times in the input line  */
         while ( rep-- > 0 ) {
           /* check for key handler on GAP level */
+#ifdef HPCGAP
+          RegionReadLock(REGION(LineEditKeyHandlers));
+#endif
           if (ch >= 0 && ch < LEN_PLIST(LineEditKeyHandlers) &&
                          ELM_PLIST(LineEditKeyHandlers, ch+1) != 0) {
+#ifdef HPCGAP
+            RegionUnlock(REGION(LineEditKeyHandlers));
+#endif
             /* prepare data for GAP handler:
                    [linestr, ch, ppos, length, yankstr]
                GAP handler must return new
@@ -2482,6 +2488,9 @@ Char * syFgets (
             }
           }
           else {
+#ifdef HPCGAP
+            RegionUnlock(REGION(LineEditKeyHandlers));
+#endif
             switch ( ch ) {
 
             case CTR('A'): /* move cursor to the start of the line         */

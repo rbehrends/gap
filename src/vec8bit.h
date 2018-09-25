@@ -128,7 +128,7 @@ extern Obj GetFieldInfo8Bit(UInt q);
 **  returns a pointer to the start of the data of the 8bit GFQ vector
 */
 #define BYTES_VEC8BIT(list) ((UInt1 *)(ADDR_OBJ(list) + 3))
-#define CONST_BYTES_VEC8BIT(list) ((UInt1 *)(CONST_ADDR_OBJ(list) + 3))
+#define CONST_BYTES_VEC8BIT(list) ((const UInt1 *)(CONST_ADDR_OBJ(list) + 3))
 
 
 /****************************************************************************

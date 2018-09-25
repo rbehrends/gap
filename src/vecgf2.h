@@ -59,7 +59,10 @@
 **
 **  returns a pointer to the start of the data of the GF2 vector
 */
-#define BLOCKS_GF2VEC(list)             ((UInt*)(ADDR_OBJ(list)+2))
+// FIXME: We assume here that the actual guard checks are done in the
+// functions calling those that use BLOCKS_GF2VEC(). In the long term,
+// CONST_ADDR_OBJ() needs to be replaced with ADDR_OBJ().
+#define BLOCKS_GF2VEC(list)             ((UInt*)(CONST_ADDR_OBJ(list)+2))
 #define CONST_BLOCKS_GF2VEC(list)       ((const UInt*)(CONST_ADDR_OBJ(list)+2))
 
 

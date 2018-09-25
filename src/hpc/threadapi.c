@@ -23,6 +23,7 @@
 #include "modules.h"
 #include "objects.h"
 #include "plist.h"
+#include "precord.h"
 #include "read.h"
 #include "records.h"
 #include "set.h"
@@ -2038,8 +2039,14 @@ MigrateObjects(int count, Obj * objects, Region * target, int retype)
                 return 0;
         }
     }
-    for (i = 0; i < count; i++)
-        REGION(objects[i]) = target;
+    for (i = 0; i < count; i++) {
+        Obj obj = objects[i];
+        switch (TNUM_OBJ(obj)) {
+        case T_PREC:
+          SortPRecRNam(obj, 0);
+        }
+        REGION(obj) = target;
+    }
     return 1;
 }
 

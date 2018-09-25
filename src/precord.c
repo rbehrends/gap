@@ -44,6 +44,7 @@
 #ifdef HPCGAP
 #include "hpc/aobjects.h"
 #include "hpc/traverse.h"
+#include "hpc/guards.h"
 #endif
 
 /****************************************************************************
@@ -262,7 +263,14 @@ UInt FindPRec( Obj rec, UInt rnam, UInt *pos, int cleanup )
     high = LEN_PREC(rec);
     if (high > 0 && (Int) (GET_RNAM_PREC(rec,high)) > 0) {
         /* DIRTY! Not everything sorted! */
+#ifdef HPCGAP
+        // FIXME: Need to sort records before making them
+        // readonly or sharing them. This can be done in
+        // the traversal routines (in principle).
+        if (cleanup && CheckExclusiveWriteAccess(rec)) {
+#else
         if (cleanup) {
+#endif
             SortPRecRNam(rec,0);
             /* Note that this does not change the length and it cannot
              * trigger a garbage collection if cleanup is 1!

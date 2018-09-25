@@ -325,7 +325,7 @@ void MakeFieldInfo8Bit( UInt q)
     /* simply invert the permutation to get the other one */
     for (i = 0; i < q; i++) {
         j = FELT_FFE_FIELDINFO_8BIT(info)[i];
-        FFE_FELT_FIELDINFO_8BIT(info)[j] = NEW_FFE(gfq, i);
+        SET_FFE_FELT_FIELDINFO_8BIT(info, j, NEW_FFE(gfq, i));
     }
 
     /* Now we need to store the position in Elements(GF(q)) of each field element
@@ -335,13 +335,14 @@ void MakeFieldInfo8Bit( UInt q)
        complex for non-prime fields */
 
     /* deal with zero and one */
-    GAPSEQ_FELT_FIELDINFO_8BIT(info)[0] = INTOBJ_INT(0);
-    GAPSEQ_FELT_FIELDINFO_8BIT(info)[FELT_FFE_FIELDINFO_8BIT(info)[1]] = INTOBJ_INT(1);
+    SET_GAPSEQ_FELT_FIELDINFO_8BIT(info, 0, INTOBJ_INT(0));
+    SET_GAPSEQ_FELT_FIELDINFO_8BIT(info, FELT_FFE_FIELDINFO_8BIT(info)[1],
+        INTOBJ_INT(1));
 
     if (q != 2) {
         if (d == 1)
             for (i = 2; i < q; i++)
-                GAPSEQ_FELT_FIELDINFO_8BIT(info)[i] = INTOBJ_INT(i);
+                SET_GAPSEQ_FELT_FIELDINFO_8BIT(info, i, INTOBJ_INT(i));
         else {
             /* run through subfields, filling in entry for all the new elements
                of each field in turn */
@@ -353,7 +354,8 @@ void MakeFieldInfo8Bit( UInt q)
                     for (j = 2; j < q1; j++) {
                         UInt place = FELT_FFE_FIELDINFO_8BIT(info)[1 + (j - 1) * (q - 1) / (q1 - 1)];
                         if (GAPSEQ_FELT_FIELDINFO_8BIT(info)[place] == 0) {
-                            GAPSEQ_FELT_FIELDINFO_8BIT(info)[place] = INTOBJ_INT(pos);
+                            SET_GAPSEQ_FELT_FIELDINFO_8BIT(info, place,
+                                INTOBJ_INT(pos));
                             pos++;
                         }
                     }
@@ -533,7 +535,7 @@ void RewriteVec8Bit( Obj vec, UInt q)
     UInt1 *gettab1, *ptr1, byte1;
     UInt1 *settab, *ptr, byte;
     UInt1 * convtab;
-    Obj *convtab1;
+    const Obj *convtab1;
     FFV val;
 
     Int i;
@@ -1999,7 +2001,7 @@ Int CmpVec8BitVec8Bit( Obj vl, Obj vr )
     UInt vall, valr;
     UInt e;
     UInt1 *gettab;
-    Obj *ffe_elt;
+    const Obj *ffe_elt;
     UInt len;
     assert(FIELD_VEC8BIT(vl) == FIELD_VEC8BIT(vr));
     q = FIELD_VEC8BIT(vl);
@@ -2453,7 +2455,7 @@ Obj FuncNUMBER_VEC8BIT (Obj self, Obj vec)
     Obj     elt;
     UInt1   *gettab;
     UInt1   *ptrS;
-    Obj     *convtab;
+    const Obj     *convtab;
 
     Obj     res;
     Obj     f;
@@ -3276,7 +3278,7 @@ Obj FuncPROD_VEC8BIT_MATRIX( Obj self, Obj vec, Obj mat)
     UInt i;
     UInt elts;
     UInt1* gettab;
-    Obj *ffefelt;
+    const Obj *ffefelt;
     Obj x;
 
     len = LEN_VEC8BIT(vec);
@@ -3432,7 +3434,7 @@ Obj ProdVec8BitMat8Bit( Obj vec, Obj mat )
     Obj res;
     Obj info;
     UInt1 * gettab;
-    Obj *ffefelt;
+    const Obj *ffefelt;
     Obj x;
 
     q = FIELD_VEC8BIT(vec);
@@ -3681,7 +3683,7 @@ Obj InverseMat8Bit( Obj mat, UInt mut)
     UInt1 *settab, *gettab;
     UInt1 byte;
     Obj row, row1, row2;
-    Obj *ffefelt;
+    const Obj *ffefelt;
     UInt1 *feltffe;
     UInt pos;
     UInt1 x = 0;
@@ -4808,7 +4810,7 @@ Obj MakeShiftedVecs( Obj v, UInt len)
     Obj ashift;
     Obj vn, xi;
     UInt i, j;
-    Obj *ffefelt;
+    const Obj *ffefelt;
     UInt1 *gettab;
     UInt1 *settab;
     UInt len1;
@@ -4910,7 +4912,7 @@ void ReduceCoeffsVec8Bit ( Obj vl, Obj vrshifted, Obj quot )
     UInt1 y;
     UInt ll = LEN_VEC8BIT(vl);
     Obj vrs;
-    Obj *ffefelt;
+    const Obj *ffefelt;
     q = FIELD_VEC8BIT(vl);
     info = GetFieldInfo8Bit(q);
     p = P_FIELDINFO_8BIT(info);
@@ -4940,7 +4942,7 @@ void ReduceCoeffsVec8Bit ( Obj vl, Obj vrshifted, Obj quot )
             multab = SCALAR_FIELDINFO_8BIT(info) + 256 * xn;
             vrs = ELM_PLIST(vrshifted, 1 + i % elts);
             lrs = LEN_VEC8BIT(vrs);
-            ptrr = BYTES_VEC8BIT(vrs) + (lrs - 1) / elts;
+            ptrr = CONST_BYTES_VEC8BIT(vrs) + (lrs - 1) / elts;
             for (j = (lrs - 1) / elts; j >= 0; j--) {
                 y = multab[*ptrr];
                 if (p == 2)
@@ -5065,7 +5067,7 @@ Obj SemiEchelonListVec8Bits( Obj mat, UInt TransformationsNeeded )
     UInt q, elts;
     Obj info;
     UInt1 *settab, *convtab, *gettab;
-    Obj *convtab1;
+    const Obj *convtab1;
     UInt1 zero, one;
     UInt1 x = 0;
     UInt1 *rowp;
@@ -5209,7 +5211,7 @@ UInt TriangulizeListVec8Bits( Obj mat, UInt clearup, Obj *deterp)
     UInt1 *gettab, *getcol;
     Obj deter = 0;
     UInt sign = 0;
-    Obj *convtab;
+    const Obj *convtab;
     Obj y;
     UInt1 x2;
 

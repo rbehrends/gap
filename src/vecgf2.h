@@ -60,6 +60,7 @@
 **  returns a pointer to the start of the data of the GF2 vector
 */
 #define BLOCKS_GF2VEC(list)             ((UInt*)(ADDR_OBJ(list)+2))
+#define CONST_BLOCKS_GF2VEC(list)       ((const UInt*)(CONST_ADDR_OBJ(list)+2))
 
 
 /****************************************************************************

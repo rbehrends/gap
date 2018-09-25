@@ -65,6 +65,7 @@
 
 #ifdef HPCGAP
 #include "hpc/aobjects.h"
+#include "hpc/thread.h"
 #endif
 
 Obj SuccFF;
@@ -1474,6 +1475,9 @@ Obj FuncLOG_FFE_DEFAULT (
 **  the smallest integer <i> such that '<i> * <z>^0 = <z>'.
 */
 Obj IntFF;
+#ifdef HPCGAP
+Int NumFF;
+#endif
 
 Obj INT_FF (
     FF                  ff )
@@ -1486,7 +1490,12 @@ Obj INT_FF (
     UInt                i;              /* loop variable                   */
 
     /* if the conversion table is not already known, construct it          */
+#ifdef HPCGAP
+    if ( NumFF < ff || (MEMBAR_READ(), ATOMIC_ELM_PLIST(IntFF, ff) == 0)) {
+        HashLock(&IntFF);
+#else
     if ( LEN_PLIST(IntFF) < ff || ELM_PLIST(IntFF,ff) == 0 ) {
+#endif
         q = SIZE_FF( ff );
         p = CHAR_FF( ff );
         conv = NEW_PLIST_IMM( T_PLIST, p-1 );
@@ -1497,11 +1506,23 @@ Obj INT_FF (
             SET_ELM_PLIST( conv, (z-1)/((q-1)/(p-1))+1, INTOBJ_INT(i) );
             z = succ[ z ];
         }
+#ifdef HPCGAP
+        GrowPlist(IntFF, ff);
+        ATOMIC_SET_ELM_PLIST( IntFF, ff, conv );
+        MEMBAR_WRITE();
+        NumFF = LEN_PLIST(IntFF);
+        HashUnlock(&IntFF);
+#else
         AssPlist( IntFF, ff, conv );
+#endif
     }
 
     /* return the conversion table                                           */
+#ifdef HPCGAP
+    return ATOMIC_ELM_PLIST( IntFF, ff);
+#else
     return ELM_PLIST( IntFF, ff );
+#endif
 }
 
 
@@ -1782,6 +1803,13 @@ static Int InitLibrary (
 
     IntFF = NEW_PLIST( T_PLIST, NUM_SHORT_FINITE_FIELDS );
     SET_LEN_PLIST( IntFF, NUM_SHORT_FINITE_FIELDS );
+
+#ifdef HPCGAP
+    MakeBagPublic(SuccFF);
+    MakeBagPublic(TypeFF);
+    MakeBagPublic(TypeFF0);
+    MakeBagPublic(IntFF);
+#endif
 
     /* init filters and functions                                          */
     InitGVarFiltsFromTable( GVarFilts );

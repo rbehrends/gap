@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #include "julia.h"
 #include "julia_gcext.h"
@@ -474,6 +475,63 @@ static void TryMark(void * p)
     }
 }
 
+static syJmp_buf abort_scan;
+static struct sigaction tmp_segv_handler, old_segv_handler;
+static struct sigaction tmp_bus_handler, old_bus_handler;
+
+static void TempSigHandler(int sig)
+{
+    syLongjmpInternal(abort_scan, 1);
+}
+
+static void RestoreTempSignals()
+{
+    sigaction(SIGSEGV, &old_segv_handler, NULL);
+    sigaction(SIGBUS, &old_bus_handler, NULL);
+}
+
+static void SetTempSignals()
+{
+    memset(&tmp_segv_handler, 0, sizeof(tmp_segv_handler));
+    sigemptyset(&tmp_segv_handler.sa_mask);
+    tmp_segv_handler.sa_handler = TempSigHandler;
+    tmp_segv_handler.sa_flags = 0;
+    if (sigaction(SIGSEGV, &tmp_segv_handler, &old_segv_handler) < 0) {
+        perror("sigaction");
+        exit(1);
+    }
+    memset(&tmp_bus_handler, 0, sizeof(tmp_bus_handler));
+    sigemptyset(&tmp_bus_handler.sa_mask);
+    tmp_bus_handler.sa_handler = TempSigHandler;
+    tmp_bus_handler.sa_flags = 0;
+    if (sigaction(SIGBUS, &tmp_bus_handler, &old_bus_handler) < 0) {
+        perror("sigaction");
+        exit(1);
+    }
+}
+
+#define GUARD_PAGES_SIZE (1024*1024)
+
+static void TryMarkRangeSafeReverse(void * start, void * end)
+{
+    if (lt_ptr(end, start)) {
+        SWAP(void *, start, end);
+    }
+    char * p = (char *)(align_ptr(start)) + GUARD_PAGES_SIZE;
+    char * q = (char *)end - sizeof(void *);
+    if (sySetjmp(abort_scan)) {
+        RestoreTempSignals();
+        return;
+    }
+    SetTempSignals();
+    while (!lt_ptr(q, p)) {
+        void *addr = *(void **)q;
+        if (addr) TryMark(addr);
+        q -= StackAlignBags;
+    }
+    RestoreTempSignals();
+}
+
 static void TryMarkRange(void * start, void * end)
 {
     if (lt_ptr(end, start)) {
@@ -482,7 +540,8 @@ static void TryMarkRange(void * start, void * end)
     char * p = align_ptr(start);
     char * q = (char *)end - sizeof(void *) + StackAlignBags;
     while (lt_ptr(p, q)) {
-        TryMark(*(void **)p);
+        void *addr = *(void **)p;
+        if (addr) TryMark(addr);
         p += StackAlignBags;
     }
 }
@@ -531,7 +590,7 @@ void GapTaskScanner(jl_task_t * task, int root_task)
     int    tid;
     void * stack = jl_task_stack_buffer(task, &size, &tid);
     if (stack && tid < 0) {
-        TryMarkRange(stack, (char *)stack + size);
+        TryMarkRangeSafeReverse(stack, (char *)stack + size);
     }
 }
 

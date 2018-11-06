@@ -502,6 +502,11 @@ void GapRootScanner(int full)
     // mark our Julia module (this contains references to our custom data
     // types, which thus also will not be collected prematurely)
     JMark(Module);
+    jl_task_t *task = JuliaTLS->current_task;
+    size_t size;
+    int tid;
+    StackBottomBags = (Bag *)jl_task_stack_buffer(task, &size, &tid);
+    StackBottomBags = (Bag *)((char *)StackBottomBags + size);
 
     // allow installing a custom marking function. This is used for
     // integrating GAP (possibly linked as a shared library) with other code
@@ -531,7 +536,7 @@ void GapTaskScanner(jl_task_t * task, int root_task)
     int    tid;
     void * stack = jl_task_stack_buffer(task, &size, &tid);
     if (stack && tid < 0) {
-        TryMarkRange(stack, (char *)stack + size);
+        TryMarkRangeSafeReverse(stack, (char *)stack + size);
     }
 }
 

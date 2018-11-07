@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #include "julia.h"
 #include "julia_gcext.h"
@@ -474,6 +475,20 @@ static void TryMark(void * p)
     }
 }
 
+static void TryMarkRangeSafeReverse(void * start, void * end)
+{
+    if (lt_ptr(end, start)) {
+        SWAP(void *, start, end);
+    }
+    char * p = (char *)(align_ptr(start));
+    char * q = (char *)end - sizeof(void *);
+    while (!lt_ptr(q, p)) {
+        void *addr = *(void **)p;
+        if (addr) TryMark(addr);
+        q -= StackAlignBags;
+    }
+}
+
 static void TryMarkRange(void * start, void * end)
 {
     if (lt_ptr(end, start)) {
@@ -482,7 +497,8 @@ static void TryMarkRange(void * start, void * end)
     char * p = align_ptr(start);
     char * q = (char *)end - sizeof(void *) + StackAlignBags;
     while (lt_ptr(p, q)) {
-        TryMark(*(void **)p);
+        void *addr = *(void **)p;
+        if (addr) TryMark(addr);
         p += StackAlignBags;
     }
 }
@@ -536,7 +552,19 @@ void GapTaskScanner(jl_task_t * task, int root_task)
     int    tid;
     void * stack = jl_task_stack_buffer(task, &size, &tid);
     if (stack && tid < 0) {
-        TryMarkRangeSafeReverse(stack, (char *)stack + size);
+        if (task->copy_stack) {
+            // We know the actually used part of the task stack, so
+            // shorten the range we have to scan.
+            stack = (void *)((char *) stack + size - task->copy_stack);
+            size = task->copy_stack;
+        }
+        volatile jl_jmp_buf *old_safe_restore = JuliaTLS->safe_restore;
+        jl_jmp_buf exc_buf;
+        if (!jl_setjmp(exc_buf, 0)) {
+            JuliaTLS->safe_restore = &exc_buf;
+            TryMarkRangeSafeReverse(stack, (char *)stack + size);
+        }
+        JuliaTLS->safe_restore = (jl_jmp_buf *)old_safe_restore;
     }
 }
 

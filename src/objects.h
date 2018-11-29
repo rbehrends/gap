@@ -405,9 +405,21 @@ static inline Obj *ADDR_OBJ(Obj obj)
     return PTR_BAG(obj);
 }
 
+
+static inline Obj *UNSAFE_ADDR_OBJ(Obj obj)
+{
+    return UNSAFE_PTR_BAG(obj);
+}
+
 static inline const Obj *CONST_ADDR_OBJ(Obj obj)
 {
     return CONST_PTR_BAG(obj);
+}
+
+
+static inline const Obj *UNSAFE_CONST_ADDR_OBJ(Obj obj)
+{
+    return UNSAFE_CONST_PTR_BAG(obj);
 }
 
 
@@ -818,6 +830,12 @@ static inline Obj TYPE_COMOBJ(Obj obj)
 }
 
 
+static inline Obj UNSAFE_TYPE_COMOBJ(Obj obj)
+{
+    return UNSAFE_CONST_ADDR_OBJ(obj)[0];
+}
+
+
 /****************************************************************************
 **
 *F  SET_TYPE_COMOBJ( <obj>, <val> ) . . .  set the type of a component object
@@ -825,6 +843,12 @@ static inline Obj TYPE_COMOBJ(Obj obj)
 static inline void SET_TYPE_COMOBJ(Obj obj, Obj val)
 {
     ADDR_OBJ(obj)[0] = val;
+}
+
+
+static inline void UNSAFE_SET_TYPE_COMOBJ(Obj obj, Obj val)
+{
+    UNSAFE_ADDR_OBJ(obj)[0] = val;
 }
 
 
@@ -861,6 +885,12 @@ static inline Obj TYPE_POSOBJ(Obj obj)
 }
 
 
+static inline Obj UNSAFE_TYPE_POSOBJ(Obj obj)
+{
+    return UNSAFE_CONST_ADDR_OBJ(obj)[0];
+}
+
+
 /****************************************************************************
 **
 *F  SET_TYPE_POSOBJ( <obj>, <val> ) . . . set the type of a positional object
@@ -868,6 +898,12 @@ static inline Obj TYPE_POSOBJ(Obj obj)
 static inline void SET_TYPE_POSOBJ(Obj obj, Obj val)
 {
     ADDR_OBJ(obj)[0] = val;
+}
+
+
+static inline void UNSAFE_SET_TYPE_POSOBJ(Obj obj, Obj val)
+{
+    UNSAFE_ADDR_OBJ(obj)[0] = val;
 }
 
 
@@ -913,6 +949,12 @@ static inline Obj TYPE_DATOBJ(Obj obj)
 static inline void SET_TYPE_DATOBJ(Obj obj, Obj val)
 {
     ADDR_OBJ(obj)[0] = val;
+}
+
+
+static inline void UNSAFE_SET_TYPE_DATOBJ(Obj obj, Obj val)
+{
+    UNSAFE_ADDR_OBJ(obj)[0] = val;
 }
 
 extern void SetTypeDatObj(Obj obj, Obj type);

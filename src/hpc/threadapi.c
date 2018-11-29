@@ -23,6 +23,7 @@
 #include "modules.h"
 #include "objects.h"
 #include "plist.h"
+#include "precord.h"
 #include "read.h"
 #include "records.h"
 #include "set.h"
@@ -129,7 +130,7 @@ static void RemoveWaitList(Monitor * monitor, struct WaitList * node)
 #ifndef WARD_ENABLED
 static inline void * ObjPtr(Obj obj)
 {
-    return PTR_BAG(obj);
+    return UNSAFE_PTR_BAG(obj);
 }
 #endif
 
@@ -952,6 +953,9 @@ static void PrintRegion(Obj);
 
 GVarDescriptor LastInaccessibleGVar;
 GVarDescriptor MAX_INTERRUPTGVar;
+#ifdef DEBUG_GUARDS
+GVarDescriptor GUARD_ERROR_STACK;
+#endif
 
 static UInt RNAM_SIGINT;
 static UInt RNAM_SIGCHLD;
@@ -964,26 +968,26 @@ static UInt RNAM_SIGWINCH;
 #ifdef USE_GASMAN
 static void MarkSemaphoreBag(Bag bag)
 {
-    Semaphore * sem = (Semaphore *)(PTR_BAG(bag));
+    Semaphore * sem = (Semaphore *)(UNSAFE_PTR_BAG(bag));
     MarkBag(sem->monitor);
 }
 
 static void MarkChannelBag(Bag bag)
 {
-    Channel * channel = (Channel *)(PTR_BAG(bag));
+    Channel * channel = (Channel *)(UNSAFE_PTR_BAG(bag));
     MarkBag(channel->queue);
     MarkBag(channel->monitor);
 }
 
 static void MarkBarrierBag(Bag bag)
 {
-    Barrier * barrier = (Barrier *)(PTR_BAG(bag));
+    Barrier * barrier = (Barrier *)(UNSAFE_PTR_BAG(bag));
     MarkBag(barrier->monitor);
 }
 
 static void MarkSyncVarBag(Bag bag)
 {
-    SyncVar * syncvar = (SyncVar *)(PTR_BAG(bag));
+    SyncVar * syncvar = (SyncVar *)(UNSAFE_PTR_BAG(bag));
     MarkBag(syncvar->queue);
     MarkBag(syncvar->monitor);
 }
@@ -991,7 +995,7 @@ static void MarkSyncVarBag(Bag bag)
 
 static void FinalizeMonitor(Bag bag)
 {
-    Monitor * monitor = (Monitor *)(PTR_BAG(bag));
+    Monitor * monitor = (Monitor *)(UNSAFE_PTR_BAG(bag));
     pthread_mutex_destroy(&monitor->lock);
 }
 
@@ -1028,16 +1032,16 @@ static void ExpandChannel(Channel * channel)
     UInt i, tail;
     Obj  newqueue;
     newqueue = NEW_PLIST(T_PLIST, newCapacity);
-    SET_LEN_PLIST(newqueue, newCapacity);
+    UNSAFE_SET_LEN_PLIST(newqueue, newCapacity);
     SET_REGION(newqueue, REGION(channel->queue));
     channel->capacity = newCapacity;
     for (i = channel->head; i < oldCapacity; i++)
-        ADDR_OBJ(newqueue)[i + 1] = ADDR_OBJ(channel->queue)[i + 1];
+        UNSAFE_ADDR_OBJ(newqueue)[i + 1] = UNSAFE_ADDR_OBJ(channel->queue)[i + 1];
     for (i = 0; i < channel->tail; i++) {
         UInt d = oldCapacity + i;
         if (d >= newCapacity)
             d -= newCapacity;
-        ADDR_OBJ(newqueue)[d + 1] = ADDR_OBJ(channel->queue)[i + 1];
+        UNSAFE_ADDR_OBJ(newqueue)[d + 1] = UNSAFE_ADDR_OBJ(channel->queue)[i + 1];
     }
     tail = channel->head + oldCapacity;
     if (tail >= newCapacity)
@@ -1054,18 +1058,18 @@ static void AddToChannel(Channel * channel, Obj obj, int migrate)
     if (migrate && IS_BAG_REF(obj) && REGION(obj) &&
         REGION(obj)->owner == GetTLS() && REGION(obj)->fixed_owner) {
         children = ReachableObjectsFrom(obj);
-        len = children ? LEN_PLIST(children) : 0;
+        len = children ? UNSAFE_LEN_PLIST(children) : 0;
     }
     else {
         children = 0;
         len = 0;
     }
     for (i = 1; i <= len; i++) {
-        Obj item = ELM_PLIST(children, i);
+        Obj item = UNSAFE_ELM_PLIST(children, i);
         SET_REGION(item, region);
     }
-    ADDR_OBJ(channel->queue)[++channel->tail] = obj;
-    ADDR_OBJ(channel->queue)[++channel->tail] = children;
+    UNSAFE_ADDR_OBJ(channel->queue)[++channel->tail] = obj;
+    UNSAFE_ADDR_OBJ(channel->queue)[++channel->tail] = children;
     if (channel->tail == channel->capacity)
         channel->tail = 0;
     channel->size += 2;
@@ -1073,16 +1077,16 @@ static void AddToChannel(Channel * channel, Obj obj, int migrate)
 
 static Obj RetrieveFromChannel(Channel * channel)
 {
-    Obj      obj = ADDR_OBJ(channel->queue)[++channel->head];
-    Obj      children = ADDR_OBJ(channel->queue)[++channel->head];
+    Obj      obj = UNSAFE_ADDR_OBJ(channel->queue)[++channel->head];
+    Obj      children = UNSAFE_ADDR_OBJ(channel->queue)[++channel->head];
     Region * region = TLS(currentRegion);
-    UInt     i, len = children ? LEN_PLIST(children) : 0;
-    ADDR_OBJ(channel->queue)[channel->head - 1] = 0;
-    ADDR_OBJ(channel->queue)[channel->head] = 0;
+    UInt     i, len = children ? UNSAFE_LEN_PLIST(children) : 0;
+    UNSAFE_ADDR_OBJ(channel->queue)[channel->head - 1] = 0;
+    UNSAFE_ADDR_OBJ(channel->queue)[channel->head] = 0;
     if (channel->head == channel->capacity)
         channel->head = 0;
     for (i = 1; i <= len; i++) {
-        Obj item = ELM_PLIST(children, i);
+        Obj item = UNSAFE_ELM_PLIST(children, i);
         SET_REGION(item, region);
     }
     channel->size -= 2;
@@ -1178,14 +1182,14 @@ static Obj ReceiveChannel(Channel * channel)
 
 static Obj ReceiveAnyChannel(Obj channelList, int with_index)
 {
-    UInt       count = LEN_PLIST(channelList);
+    UInt       count = UNSAFE_LEN_PLIST(channelList);
     UInt       i, p;
     Monitor ** monitors = alloca(count * sizeof(Monitor *));
     Channel ** channels = alloca(count * sizeof(Channel *));
     Obj        result;
     Channel *  channel;
     for (i = 0; i < count; i++)
-        channels[i] = ObjPtr(ELM_PLIST(channelList, i + 1));
+        channels[i] = ObjPtr(UNSAFE_ELM_PLIST(channelList, i + 1));
     SortChannels(count, channels);
     for (i = 0; i < count; i++)
         monitors[i] = ObjPtr(channels[i]->monitor);
@@ -1227,11 +1231,11 @@ static Obj ReceiveAnyChannel(Obj channelList, int with_index)
     UnlockMonitor(monitors[p]);
     if (with_index) {
         Obj list = NEW_PLIST(T_PLIST, 2);
-        SET_LEN_PLIST(list, 2);
-        SET_ELM_PLIST(list, 1, result);
+        UNSAFE_SET_LEN_PLIST(list, 2);
+        UNSAFE_SET_ELM_PLIST(list, 1, result);
         for (i = 1; i <= count; i++)
-            if (ObjPtr(ELM_PLIST(channelList, i)) == channel) {
-                SET_ELM_PLIST(list, 2, INTOBJ_INT(i));
+            if (ObjPtr(UNSAFE_ELM_PLIST(channelList, i)) == channel) {
+                UNSAFE_SET_ELM_PLIST(list, 2, INTOBJ_INT(i));
                 break;
             }
         return list;
@@ -1251,10 +1255,10 @@ static Obj MultiReceiveChannel(Channel * channel, UInt max)
     else
         count = max;
     result = NEW_PLIST(T_PLIST, count);
-    SET_LEN_PLIST(result, count);
+    UNSAFE_SET_LEN_PLIST(result, count);
     for (i = 0; i < count; i++) {
         Obj item = RetrieveFromChannel(channel);
-        SET_ELM_PLIST(result, i + 1, item);
+        UNSAFE_SET_ELM_PLIST(result, i + 1, item);
     }
     SignalChannel(channel);
     UnlockChannel(channel);
@@ -1266,9 +1270,9 @@ static Obj InspectChannel(Channel * channel)
     LockChannel(channel);
     const UInt count = channel->size / 2;
     Obj result = NEW_PLIST(T_PLIST, count);
-    SET_LEN_PLIST(result, count);
+    UNSAFE_SET_LEN_PLIST(result, count);
     for (UInt i = 0, p = channel->head; i < count; i++) {
-        SET_ELM_PLIST(result, i + 1, ELM_PLIST(channel->queue, p + 1));
+        UNSAFE_SET_ELM_PLIST(result, i + 1, UNSAFE_ELM_PLIST(channel->queue, p + 1));
         p += 2;
         if (p == channel->capacity)
             p = 0;
@@ -1304,7 +1308,7 @@ static Obj CreateChannel(int capacity)
     channel->waiting = 0;
     channel->queue = NEW_PLIST(T_PLIST, channel->capacity);
     SET_REGION(channel->queue, LimboRegion);
-    SET_LEN_PLIST(channel->queue, channel->capacity);
+    UNSAFE_SET_LEN_PLIST(channel->queue, channel->capacity);
     return channelBag;
 }
 
@@ -2011,8 +2015,14 @@ MigrateObjects(int count, Obj * objects, Region * target, int retype)
                 return 0;
         }
     }
-    for (i = 0; i < count; i++)
-        SET_REGION(objects[i], target);
+    for (i = 0; i < count; i++) {
+        Obj obj = objects[i];
+        switch (TNUM_OBJ(obj)) {
+        case T_PREC:
+          SortPRecRNam(obj, 0);
+        }
+        SET_REGION(obj, target);
+    }
     return 1;
 }
 
@@ -2658,6 +2668,9 @@ static Int InitKernel(StructInitInfo * module)
 
     DeclareGVar(&LastInaccessibleGVar, "LastInaccessible");
     DeclareGVar(&MAX_INTERRUPTGVar, "MAX_INTERRUPT");
+#ifdef DEBUG_GUARDS
+    DeclareGVar(&GUARD_ERROR_STACK, "GUARD_ERROR_STACK");
+#endif
 
     // install mark functions
     InitMarkFuncBags(T_THREAD, MarkNoSubBags);

@@ -133,10 +133,24 @@ static inline const FuncBag * CONST_FUNC(Obj func)
 }
 
 
+static inline const FuncBag * UNSAFE_CONST_FUNC(Obj func)
+{
+    GAP_ASSERT(TNUM_OBJ(func) == T_FUNCTION);
+    return (const FuncBag *)UNSAFE_CONST_ADDR_OBJ(func);
+}
+
+
 static inline ObjFunc HDLR_FUNC(Obj func, Int i)
 {
     GAP_ASSERT(0 <= i && i < 8);
     return CONST_FUNC(func)->handlers[i];
+}
+
+
+static inline ObjFunc UNSAFE_HDLR_FUNC(Obj func, Int i)
+{
+    GAP_ASSERT(0 <= i && i < 8);
+    return UNSAFE_CONST_FUNC(func)->handlers[i];
 }
 
 static inline Obj NAME_FUNC(Obj func)
@@ -147,6 +161,12 @@ static inline Obj NAME_FUNC(Obj func)
 static inline Int NARG_FUNC(Obj func)
 {
     return INT_INTOBJ(CONST_FUNC(func)->nargs);
+}
+
+
+static inline Int UNSAFE_NARG_FUNC(Obj func)
+{
+    return INT_INTOBJ(UNSAFE_CONST_FUNC(func)->nargs);
 }
 
 static inline Obj NAMS_FUNC(Obj func)
@@ -255,9 +275,21 @@ static inline ObjFunc_0ARGS HDLR_0ARGS(Obj func)
     return (ObjFunc_0ARGS)HDLR_FUNC(func, 0);
 }
 
+
+static inline ObjFunc_0ARGS UNSAFE_HDLR_0ARGS(Obj func)
+{
+    return (ObjFunc_0ARGS)UNSAFE_HDLR_FUNC(func, 0);
+}
+
 static inline ObjFunc_1ARGS HDLR_1ARGS(Obj func)
 {
     return (ObjFunc_1ARGS)HDLR_FUNC(func, 1);
+}
+
+
+static inline ObjFunc_1ARGS UNSAFE_HDLR_1ARGS(Obj func)
+{
+    return (ObjFunc_1ARGS)UNSAFE_HDLR_FUNC(func, 1);
 }
 
 static inline ObjFunc_2ARGS HDLR_2ARGS(Obj func)
@@ -331,9 +363,21 @@ static inline Obj CALL_0ARGS(Obj f)
     return HDLR_0ARGS(f)(f);
 }
 
+
+static inline Obj UNSAFE_CALL_0ARGS(Obj f)
+{
+    return UNSAFE_HDLR_0ARGS(f)(f);
+}
+
 static inline Obj CALL_1ARGS(Obj f, Obj a1)
 {
     return HDLR_1ARGS(f)(f, a1);
+}
+
+
+static inline Obj UNSAFE_CALL_1ARGS(Obj f, Obj a1)
+{
+    return UNSAFE_HDLR_1ARGS(f)(f, a1);
 }
 
 static inline Obj CALL_2ARGS(Obj f, Obj a1, Obj a2)

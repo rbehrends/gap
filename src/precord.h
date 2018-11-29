@@ -88,6 +88,13 @@ static inline UInt LEN_PREC(Obj rec)
 }
 
 
+static inline UInt UNSAFE_LEN_PREC(Obj rec)
+{
+    GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
+    return ((const UInt *)(UNSAFE_CONST_ADDR_OBJ(rec)))[1];
+}
+
+
 /****************************************************************************
 **
 *F  SET_LEN_PREC( <rec> ) . . . . .  set number of components of plain record
@@ -98,6 +105,13 @@ static inline void SET_LEN_PREC(Obj rec, UInt nr)
 {
     GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
     ((UInt *)(ADDR_OBJ(rec)))[1] = nr;
+}
+
+
+static inline void UNSAFE_SET_LEN_PREC(Obj rec, UInt nr)
+{
+    GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
+    ((UInt *)(UNSAFE_ADDR_OBJ(rec)))[1] = nr;
 }
 
 
@@ -116,6 +130,14 @@ static inline void SET_RNAM_PREC(Obj rec, UInt i, UInt rnam)
 }
 
 
+static inline void UNSAFE_SET_RNAM_PREC(Obj rec, UInt i, UInt rnam)
+{
+    GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
+    GAP_ASSERT(i <= CAPACITY_PREC(rec));
+    *(UInt *)(UNSAFE_ADDR_OBJ(rec)+2*(i)) = rnam;
+}
+
+
 /****************************************************************************
 **
 *F  GET_RNAM_PREC( <rec>, <i> ) . . . . . . . name of <i>-th record component
@@ -128,6 +150,14 @@ static inline UInt GET_RNAM_PREC(Obj rec, UInt i)
     GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
     GAP_ASSERT(i <= CAPACITY_PREC(rec));
     return *(const UInt *)(CONST_ADDR_OBJ(rec)+2*(i));
+}
+
+
+static inline UInt UNSAFE_GET_RNAM_PREC(Obj rec, UInt i)
+{
+    GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
+    GAP_ASSERT(i <= CAPACITY_PREC(rec));
+    return *(const UInt *)(UNSAFE_CONST_ADDR_OBJ(rec)+2*(i));
 }
 
 
@@ -146,6 +176,14 @@ static inline void SET_ELM_PREC(Obj rec, UInt i, Obj val)
 }
 
 
+static inline void UNSAFE_SET_ELM_PREC(Obj rec, UInt i, Obj val)
+{
+    GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
+    GAP_ASSERT(i <= CAPACITY_PREC(rec));
+    *(UNSAFE_ADDR_OBJ(rec)+2*(i)+1) = val;
+}
+
+
 /****************************************************************************
 **
 *F  GET_ELM_PREC( <rec>, <i> )  . . . . . .  value of <i>-th record component
@@ -158,6 +196,14 @@ static inline Obj GET_ELM_PREC(Obj rec, UInt i)
     GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
     GAP_ASSERT(i <= CAPACITY_PREC(rec));
     return *(CONST_ADDR_OBJ(rec)+2*(i)+1);
+}
+
+
+static inline Obj UNSAFE_GET_ELM_PREC(Obj rec, UInt i)
+{
+    GAP_ASSERT(IS_PREC_OR_COMOBJ(rec));
+    GAP_ASSERT(i <= CAPACITY_PREC(rec));
+    return *(UNSAFE_CONST_ADDR_OBJ(rec)+2*(i)+1);
 }
 
 

@@ -1202,7 +1202,7 @@ void PrintPathError (
 Obj             TypeComObj (
     Obj                 obj )
 {
-    Obj result = TYPE_COMOBJ( obj );
+    Obj result = UNSAFE_TYPE_COMOBJ( obj );
 #ifdef HPCGAP
     MEMBAR_READ();
 #endif
@@ -1215,7 +1215,7 @@ void SetTypeComObj( Obj obj, Obj type)
     ReadGuard(obj);
     MEMBAR_WRITE();
 #endif
-    SET_TYPE_COMOBJ(obj, type);
+    UNSAFE_SET_TYPE_COMOBJ(obj, type);
     CHANGED_BAG(obj);
 }
 #endif
@@ -1364,7 +1364,7 @@ Int IsbComObj(Obj obj, UInt rnam)
 Obj TypePosObj (
     Obj                 obj )
 {
-    Obj result = TYPE_POSOBJ( obj );
+    Obj result = UNSAFE_TYPE_POSOBJ( obj );
 #ifdef HPCGAP
     MEMBAR_READ();
 #endif
@@ -1377,7 +1377,7 @@ void SetTypePosObj( Obj obj, Obj type)
     ReadGuard(obj);
     MEMBAR_WRITE();
 #endif
-    SET_TYPE_POSOBJ(obj, type);
+    UNSAFE_SET_TYPE_POSOBJ(obj, type);
     CHANGED_BAG(obj);
 }
 #endif
@@ -1637,7 +1637,7 @@ Obj FuncSET_TYPE_DATOBJ (
 #ifdef HPCGAP
     ReadGuard( obj );
 #endif
-    SET_TYPE_DATOBJ(obj, type);
+    UNSAFE_SET_TYPE_DATOBJ(obj, type);
 #ifdef HPCGAP
     if (TNUM_OBJ(obj) != T_DATOBJ)
 #endif

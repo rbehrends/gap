@@ -565,7 +565,7 @@ static void SweepWeakPointerObj( Bag *src, Bag *dst, UInt len)
 void TraverseWPObj(TraversalState * traversal, Obj obj)
 {
     UInt  len = STORED_LEN_WPOBJ(obj);
-    const Obj * ptr = CONST_ADDR_OBJ(obj) + 1;
+    const Obj * ptr = UNSAFE_CONST_ADDR_OBJ(obj) + 1;
     while (len) {
         volatile Obj tmp = *ptr;
         MEMBAR_READ();
@@ -579,8 +579,8 @@ void TraverseWPObj(TraversalState * traversal, Obj obj)
 void CopyWPObj(TraversalState * traversal, Obj copy, Obj original)
 {
     UInt  len = STORED_LEN_WPOBJ(original);
-    const Obj * ptr = CONST_ADDR_OBJ(original) + 1;
-    Obj * copyptr = ADDR_OBJ(copy) + 1;
+    const Obj * ptr = UNSAFE_CONST_ADDR_OBJ(original) + 1;
+    Obj * copyptr = UNSAFE_ADDR_OBJ(copy) + 1;
     while (len--) {
         volatile Obj tmp = *ptr;
         MEMBAR_READ();

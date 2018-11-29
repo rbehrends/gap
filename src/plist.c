@@ -858,8 +858,8 @@ Obj FuncIS_PLIST_REP (
 
 void TraversePlist(TraversalState * traversal, Obj obj)
 {
-    UInt  len = LEN_PLIST(obj);
-    const Obj * ptr = CONST_ADDR_OBJ(obj) + 1;
+    UInt  len = UNSAFE_LEN_PLIST(obj);
+    const Obj * ptr = UNSAFE_CONST_ADDR_OBJ(obj) + 1;
     while (len) {
         QueueForTraversal(traversal, *ptr++);
         len--;
@@ -868,9 +868,9 @@ void TraversePlist(TraversalState * traversal, Obj obj)
 
 void CopyPlist(TraversalState * traversal, Obj copy, Obj original)
 {
-    UInt  len = LEN_PLIST(original);
-    const Obj * ptr = CONST_ADDR_OBJ(original) + 1;
-    Obj * copyptr = ADDR_OBJ(copy) + 1;
+    UInt  len = UNSAFE_LEN_PLIST(original);
+    const Obj * ptr = UNSAFE_CONST_ADDR_OBJ(original) + 1;
+    Obj * copyptr = UNSAFE_ADDR_OBJ(copy) + 1;
     while (len) {
         *copyptr++ = ReplaceByCopy(traversal, *ptr++);
         len--;

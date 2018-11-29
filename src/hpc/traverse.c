@@ -34,7 +34,7 @@ static Obj NewList(UInt size)
 {
     Obj list;
     list = NEW_PLIST(size == 0 ? T_PLIST_EMPTY : T_PLIST, size);
-    SET_LEN_PLIST(list, size);
+    UNSAFE_SET_LEN_PLIST(list, size);
     return list;
 }
 
@@ -52,7 +52,7 @@ inline Obj ReplaceByCopy(TraversalState * traversal, Obj obj)
 
     UInt             found = FindTraversedObj(traversal, obj);
     if (found)
-        return ELM_PLIST(traversal->copyMap, found);
+        return UNSAFE_ELM_PLIST(traversal->copyMap, found);
     else if (traversal->border) {
         if (!IS_BAG_REF(obj) || !REGION(obj) ||
             REGION(obj) == traversal->region)
@@ -98,7 +98,7 @@ static int SeenDuringTraversal(TraversalState * traversal, Obj obj)
     if (traversal->hashSize * 3 / 2 >= traversal->hashCapacity)
         TraversalRehash(traversal);
     hash = FibHash((UInt)obj, traversal->hashBits);
-    hashTable = ADDR_OBJ(traversal->hashTable) + 1;
+    hashTable = UNSAFE_ADDR_OBJ(traversal->hashTable) + 1;
     for (;;) {
         if (hashTable[hash] == NULL) {
             hashTable[hash] = obj;
@@ -118,7 +118,7 @@ static UInt FindTraversedObj(TraversalState * traversal, Obj obj)
     if (!IS_BAG_REF(obj))
         return 0;
     hash = FibHash((UInt)obj, traversal->hashBits);
-    hashTable = ADDR_OBJ(traversal->hashTable) + 1;
+    hashTable = UNSAFE_ADDR_OBJ(traversal->hashTable) + 1;
     for (;;) {
         if (hashTable[hash] == obj)
             return (int)hash + 1;
@@ -139,7 +139,7 @@ static void TraversalRehash(TraversalState * traversal)
     traversal->hashSize = 0;
     traversal->hashBits++;
     for (i = 1; i <= oldsize; i++) {
-        Obj obj = CONST_ADDR_OBJ(oldlist)[i];
+        Obj obj = UNSAFE_CONST_ADDR_OBJ(oldlist)[i];
         if (obj != NULL)
             SeenDuringTraversal(traversal, obj);
     }
@@ -161,11 +161,11 @@ void QueueForTraversal(TraversalState * traversal, Obj obj)
         Obj oldlist = traversal->list;
         Obj list = NewList(newcapacity);
         for (i = 1; i <= oldcapacity; i++)
-            ADDR_OBJ(list)[i] = CONST_ADDR_OBJ(oldlist)[i];
+            UNSAFE_ADDR_OBJ(list)[i] = UNSAFE_CONST_ADDR_OBJ(oldlist)[i];
         traversal->list = list;
         traversal->listCapacity = newcapacity;
     }
-    ADDR_OBJ(traversal->list)[++traversal->listSize] = obj;
+    UNSAFE_ADDR_OBJ(traversal->list)[++traversal->listSize] = obj;
 }
 
 static void TraverseRegionFrom(TraversalState * traversal,
@@ -182,7 +182,7 @@ static void TraverseRegionFrom(TraversalState * traversal,
     traversal->region = REGION(obj);
     QueueForTraversal(traversal, obj);
     while (traversal->listCurrent < traversal->listSize) {
-        Obj current = ADDR_OBJ(traversal->list)[++traversal->listCurrent];
+        Obj current = UNSAFE_ADDR_OBJ(traversal->list)[++traversal->listCurrent];
         int tnum = TNUM_BAG(current);
         const TraversalMethodEnum method = TraversalMethod[tnum];
         int                       size;
@@ -196,7 +196,7 @@ static void TraverseRegionFrom(TraversalState * traversal,
         case TRAVERSE_ALL:
         case TRAVERSE_ALL_BUT_FIRST:
             size = SIZE_BAG(current) / sizeof(Obj);
-            ptr = PTR_BAG(current);
+            ptr = UNSAFE_PTR_BAG(current);
             if (size && method == TRAVERSE_ALL_BUT_FIRST) {
                 ptr++;
                 size--;
@@ -209,7 +209,7 @@ static void TraverseRegionFrom(TraversalState * traversal,
             break;
         }
     }
-    SET_LEN_PLIST(traversal->list, traversal->listSize);
+    UNSAFE_SET_LEN_PLIST(traversal->list, traversal->listSize);
 }
 
 // static int IsReadable(Obj obj) {
@@ -251,8 +251,8 @@ static Obj CopyBag(TraversalState * traversal, Obj copy, Obj original)
     UInt                      size = SIZE_BAG(original);
     UInt                      type = TNUM_BAG(original);
     const TraversalMethodEnum method = TraversalMethod[type];
-    Obj *                     ptr = ADDR_OBJ(copy);
-    memcpy(ptr, CONST_ADDR_OBJ(original), size);
+    Obj *                     ptr = UNSAFE_ADDR_OBJ(copy);
+    memcpy(ptr, UNSAFE_CONST_ADDR_OBJ(original), size);
 
     switch (method) {
     case TRAVERSE_BY_FUNCTION:
@@ -297,7 +297,7 @@ int PreMakeImmutableCheck(Obj obj)
 static Obj WrappedInList(Obj obj)
 {
     Obj list = NewList(1);
-    SET_ELM_PLIST(list, 1, obj);
+    UNSAFE_SET_ELM_PLIST(list, 1, obj);
     return list;
 }
 
@@ -321,10 +321,10 @@ Obj CopyReachableObjectsFrom(Obj obj, int delimited, int asList, int imm)
     BeginTraversal(&traversal);
     TraverseRegionFrom(&traversal, obj, imm ? IsMutable : IsSameRegion);
 
-    const Obj * traversed = CONST_ADDR_OBJ(traversal.list);
-    len = LEN_PLIST(traversal.list);
+    const Obj * traversed = UNSAFE_CONST_ADDR_OBJ(traversal.list);
+    len = UNSAFE_LEN_PLIST(traversal.list);
     copyList = NewList(len);
-    Obj * copies = ADDR_OBJ(copyList);
+    Obj * copies = UNSAFE_ADDR_OBJ(copyList);
     traversal.border = delimited;
     if (len == 0) {
         if (delimited) {
@@ -333,14 +333,14 @@ Obj CopyReachableObjectsFrom(Obj obj, int delimited, int asList, int imm)
         }
         ErrorQuit("Object not in a readable region", 0L, 0L);
     }
-    traversal.copyMap = NewList(LEN_PLIST(traversal.hashTable));
+    traversal.copyMap = NewList(UNSAFE_LEN_PLIST(traversal.hashTable));
     for (i = 1; i <= len; i++) {
         UInt loc = FindTraversedObj(&traversal, traversed[i]);
         if (loc) {
             Obj original = traversed[i];
             Obj copy;
             copy = NewBag(TNUM_BAG(original), SIZE_BAG(original));
-            SET_ELM_PLIST(traversal.copyMap, loc, copy);
+            UNSAFE_SET_ELM_PLIST(traversal.copyMap, loc, copy);
             copies[i] = copy;
         }
     }
@@ -363,9 +363,9 @@ Obj CopyTraversed(Obj traversedList)
 {
     TraversalState traversal;
     UInt           len, i;
-    const Obj *    traversed = CONST_ADDR_OBJ(traversedList);
+    const Obj *    traversed = UNSAFE_CONST_ADDR_OBJ(traversedList);
     BeginTraversal(&traversal);
-    len = LEN_PLIST(traversedList);
+    len = UNSAFE_LEN_PLIST(traversedList);
     if (len == 1) {
         Obj obj = traversed[1];
         if (!IS_BAG_REF(obj) || REGION(obj) == NULL)
@@ -374,14 +374,14 @@ Obj CopyTraversed(Obj traversedList)
     for (i = 1; i <= len; i++)
         SeenDuringTraversal(&traversal, traversed[i]);
     Obj   copyList = NewList(len);
-    Obj * copies = ADDR_OBJ(copyList);
-    traversal.copyMap = NewList(LEN_PLIST(traversal.hashTable));
+    Obj * copies = UNSAFE_ADDR_OBJ(copyList);
+    traversal.copyMap = NewList(UNSAFE_LEN_PLIST(traversal.hashTable));
     for (i = 1; i <= len; i++) {
         Obj  original = traversed[i];
         UInt loc = FindTraversedObj(&traversal, original);
         Obj  copy;
         copy = NewBag(TNUM_BAG(original), SIZE_BAG(original));
-        SET_ELM_PLIST(traversal.copyMap, loc, copy);
+        UNSAFE_SET_ELM_PLIST(traversal.copyMap, loc, copy);
         copies[i] = copy;
     }
     for (i = 1; i <= len; i++)

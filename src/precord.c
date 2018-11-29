@@ -44,6 +44,7 @@
 #ifdef HPCGAP
 #include "hpc/aobjects.h"
 #include "hpc/traverse.h"
+#include "hpc/guards.h"
 #endif
 
 /****************************************************************************
@@ -129,16 +130,16 @@ Int             GrowPRec (
 
 void TraversePRecord(TraversalState * traversal, Obj obj)
 {
-    UInt i, len = LEN_PREC(obj);
+    UInt i, len = UNSAFE_LEN_PREC(obj);
     for (i = 1; i <= len; i++)
-        QueueForTraversal(traversal, (Obj)GET_ELM_PREC(obj, i));
+        QueueForTraversal(traversal, (Obj)UNSAFE_GET_ELM_PREC(obj, i));
 }
 
 void CopyPRecord(TraversalState * traversal, Obj copy, Obj original)
 {
-    UInt i, len = LEN_PREC(original);
+    UInt i, len = UNSAFE_LEN_PREC(original);
     for (i = 1; i <= len; i++)
-        SET_ELM_PREC(copy, i, ReplaceByCopy(traversal, GET_ELM_PREC(original, i)));
+        UNSAFE_SET_ELM_PREC(copy, i, ReplaceByCopy(traversal, UNSAFE_GET_ELM_PREC(original, i)));
 }
 
 #endif // WARD_ENABLED
@@ -259,7 +260,14 @@ UInt FindPRec( Obj rec, UInt rnam, UInt *pos, int cleanup )
     high = LEN_PREC(rec);
     if (high > 0 && (Int) (GET_RNAM_PREC(rec,high)) > 0) {
         /* DIRTY! Not everything sorted! */
+#ifdef HPCGAP
+        // FIXME: Need to sort records before making them
+        // readonly or sharing them. This can be done in
+        // the traversal routines (in principle).
+        if (cleanup && CheckExclusiveWriteAccess(rec)) {
+#else
         if (cleanup) {
+#endif
             SortPRecRNam(rec,0);
             /* Note that this does not change the length and it cannot
              * trigger a garbage collection if cleanup is 1!

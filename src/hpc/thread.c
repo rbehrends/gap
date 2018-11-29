@@ -276,13 +276,13 @@ void CreateMainRegion(void)
     TLS(threadRegion) = TLS(currentRegion);
     TLS(currentRegion)->fixed_owner = 1;
     RegionWriteLock(TLS(currentRegion));
-    TLS(currentRegion)->name = MakeImmString("thread region #0");
-    PublicRegionName = MakeImmString("public region");
+    TLS(currentRegion)->name = UnsafeMakeImmString("thread region #0");
+    PublicRegionName = UnsafeMakeImmString("public region");
     LimboRegion = NewRegion();
     LimboRegion->fixed_owner = 1;
-    LimboRegion->name = MakeImmString("limbo region");
+    LimboRegion->name = UnsafeMakeImmString("limbo region");
     ReadOnlyRegion = NewRegion();
-    ReadOnlyRegion->name = MakeImmString("read-only region");
+    ReadOnlyRegion->name = UnsafeMakeImmString("read-only region");
     ReadOnlyRegion->fixed_owner = 1;
     for (i = 0; i <= MAX_THREADS; i++) {
         ReadOnlyRegion->readers[i] = 1;
@@ -294,8 +294,8 @@ static Obj MakeImmString2(const Char * cstr1, const Char * cstr2)
     Obj    result;
     size_t len1 = strlen(cstr1), len2 = strlen(cstr2);
     result = NEW_STRING(len1 + len2);
-    memcpy(CSTR_STRING(result), cstr1, len1);
-    memcpy(CSTR_STRING(result) + len1, cstr2, len2);
+    memcpy(UNSAFE_CSTR_STRING(result), cstr1, len1);
+    memcpy(UNSAFE_CSTR_STRING(result) + len1, cstr2, len2);
     MakeImmutableString(result);
     return result;
 }
@@ -328,7 +328,7 @@ void * DispatchThread(void * arg)
     TLS(threadObject) = this_thread->thread_object;
     pthread_mutex_lock(this_thread->lock);
 
-    ThreadObject *thread = (ThreadObject *)ADDR_OBJ(TLS(threadObject));
+    ThreadObject *thread = (ThreadObject *)UNSAFE_ADDR_OBJ(TLS(threadObject));
     thread->tls = GetTLS();
     pthread_cond_broadcast(this_thread->cond);
     pthread_mutex_unlock(this_thread->lock);
@@ -641,7 +641,7 @@ Region * GetRegionOf(Obj obj)
     if (!IS_BAG_REF(obj))
         return NULL;
     if (TNUM_OBJ(obj) == T_REGION)
-        return *(Region **)(ADDR_OBJ(obj));
+        return *(Region **)(UNSAFE_ADDR_OBJ(obj));
     return REGION(obj);
 }
 
@@ -679,7 +679,7 @@ static Obj NewList(UInt size)
 {
     Obj list;
     list = NEW_PLIST(size == 0 ? T_PLIST_EMPTY : T_PLIST, size);
-    SET_LEN_PLIST(list, size);
+    UNSAFE_SET_LEN_PLIST(list, size);
     return list;
 }
 
@@ -688,8 +688,8 @@ Obj GetRegionLockCounters(Region * region)
     Obj result = NewList(2);
 
     if (region) {
-        SET_ELM_PLIST(result, 1, INTOBJ_INT(region->locks_acquired));
-        SET_ELM_PLIST(result, 2, INTOBJ_INT(region->locks_contended));
+        UNSAFE_SET_ELM_PLIST(result, 1, INTOBJ_INT(region->locks_acquired));
+        UNSAFE_SET_ELM_PLIST(result, 2, INTOBJ_INT(region->locks_contended));
     }
     MEMBAR_READ();
     return result;
@@ -729,12 +729,12 @@ void PushRegionLock(Region * region)
         TLS(lockStack) = NewList(16);
         TLS(lockStackPointer) = 0;
     }
-    else if (LEN_PLIST(TLS(lockStack)) == TLS(lockStackPointer)) {
+    else if (UNSAFE_LEN_PLIST(TLS(lockStack)) == TLS(lockStackPointer)) {
         int newlen = TLS(lockStackPointer) * 3 / 2;
         GROW_PLIST(TLS(lockStack), newlen);
     }
     TLS(lockStackPointer)++;
-    SET_ELM_PLIST(TLS(lockStack), TLS(lockStackPointer),
+    UNSAFE_SET_ELM_PLIST(TLS(lockStack), TLS(lockStackPointer),
                   region ? region->obj : (Obj)0);
 }
 
@@ -742,12 +742,12 @@ void PopRegionLocks(int newSP)
 {
     while (newSP < TLS(lockStackPointer)) {
         int p = TLS(lockStackPointer)--;
-        Obj region_obj = ELM_PLIST(TLS(lockStack), p);
+        Obj region_obj = UNSAFE_ELM_PLIST(TLS(lockStack), p);
         if (!region_obj)
             continue;
-        Region * region = *(Region **)(ADDR_OBJ(region_obj));
+        Region * region = *(Region **)(UNSAFE_ADDR_OBJ(region_obj));
         RegionUnlock(region);
-        SET_ELM_PLIST(TLS(lockStack), p, (Obj)0);
+        UNSAFE_SET_ELM_PLIST(TLS(lockStack), p, (Obj)0);
     }
 }
 
@@ -869,8 +869,8 @@ static void InterruptCurrentThread(int locked, Stat stat)
     if (state >> TSTATE_SHIFT) {
         Int n = state >> TSTATE_SHIFT;
         if (TLS(interruptHandlers)) {
-            if (n >= 1 && n <= LEN_PLIST(TLS(interruptHandlers)))
-                handler = ELM_PLIST(TLS(interruptHandlers), n);
+            if (n >= 1 && n <= UNSAFE_LEN_PLIST(TLS(interruptHandlers)))
+                handler = UNSAFE_ELM_PLIST(TLS(interruptHandlers), n);
         }
     }
     if (handler)
@@ -885,9 +885,9 @@ void SetInterruptHandler(int handler, Obj func)
 {
     if (!TLS(interruptHandlers)) {
         TLS(interruptHandlers) = NEW_PLIST(T_PLIST, MAX_INTERRUPT);
-        SET_LEN_PLIST(TLS(interruptHandlers), MAX_INTERRUPT);
+        UNSAFE_SET_LEN_PLIST(TLS(interruptHandlers), MAX_INTERRUPT);
     }
-    SET_ELM_PLIST(TLS(interruptHandlers), handler, func);
+    UNSAFE_SET_ELM_PLIST(TLS(interruptHandlers), handler, func);
 }
 
 void HandleInterrupts(int locked, Stat stat)
@@ -1044,9 +1044,9 @@ static Int CurrentRegionPrecedence(void)
         return -1;
     sp = TLS(lockStackPointer);
     while (sp > 0) {
-        Obj region_obj = ELM_PLIST(TLS(lockStack), sp);
+        Obj region_obj = UNSAFE_ELM_PLIST(TLS(lockStack), sp);
         if (region_obj) {
-            Int prec = ((Region *)(*ADDR_OBJ(region_obj)))->prec;
+            Int prec = ((Region *)(*UNSAFE_ADDR_OBJ(region_obj)))->prec;
             if (prec >= 0)
                 return prec;
         }
@@ -1213,6 +1213,9 @@ Region * CurrentRegion(void)
 }
 
 extern GVarDescriptor LastInaccessibleGVar;
+#ifdef DEBUG_GUARDS
+extern GVarDescriptor GUARD_ERROR_STACK;
+#endif
 
 #ifdef VERBOSE_GUARDS
 
@@ -1282,5 +1285,76 @@ void ReadGuardError(Obj o)
         (Int)o, (Int)TNAM_OBJ(o));
 }
 #endif
+
+// These are temporary debugging functions.
+
+Int NumReadErrors = 0;
+Int NumWriteErrors = 0;
+volatile int GuardDummy;
+
+#ifdef DEBUG_GUARDS
+
+#include <execinfo.h>
+
+#define BACKTRACE_DEPTH 128
+
+void SetGuardErrorStack(void) {
+    void *callstack[BACKTRACE_DEPTH];
+    int depth = backtrace(callstack, BACKTRACE_DEPTH);
+    char **calls = backtrace_symbols(callstack, depth);
+    Obj stack = NEW_PLIST_IMM(T_PLIST, depth);
+    UNSAFE_SET_LEN_PLIST(stack, depth-1);
+    for (int i = 1; i < depth; i++) {
+        char *p = calls[i]+1;
+        char *q = p;
+        while (*p) {
+            if (p[-1] == ' ' && p[0] == ' ')
+                p++;
+            else
+                *q++ = *p++;
+        }
+        *q++ = 0;
+        UNSAFE_SET_ELM_PLIST(stack, i, UnsafeMakeImmString(calls[i]));
+    }
+    free(calls);
+    SetGVar(&GUARD_ERROR_STACK, stack);
+}
+#endif
+
+PURE_FUNC int HandleReadGuardError(Bag bag) {
+    NumReadErrors++;
+    // We shift some of the rarer checks here to
+    // avoid overloading ReadCheck().
+    if (REGION(bag)->alt_owner == GetTLS())
+        return 0;
+    if (TLS(DisableGuards))
+        return 0;
+    SetGVar(&LastInaccessibleGVar, bag);
+#ifdef DEBUG_GUARDS
+    SetGuardErrorStack();
+#endif
+    ErrorMayQuit(
+        "Attempt to read object %i of type %s without having read access",
+        (Int)bag, (Int)TNAM_OBJ(bag));
+    return 0;
+}
+
+PURE_FUNC int HandleWriteGuardError(Bag bag) {
+    NumWriteErrors++;
+    // We shift some of the rarer checks here to
+    // avoid overloading ReadCheck().
+    if (REGION(bag)->alt_owner == GetTLS())
+        return 0;
+    if (TLS(DisableGuards))
+        return 0;
+    SetGVar(&LastInaccessibleGVar, bag);
+#ifdef DEBUG_GUARDS
+    SetGuardErrorStack();
+#endif
+    ErrorMayQuit(
+        "Attempt to write object %i of type %s without having write access",
+        (Int)bag, (Int)TNAM_OBJ(bag));
+    return 0;
+}
 
 #endif

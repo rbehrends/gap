@@ -52,6 +52,13 @@ static inline UChar CHAR_VALUE(Obj charObj)
 }
 
 
+static inline UChar UNSAFE_CHAR_VALUE(Obj charObj)
+{
+    GAP_ASSERT(TNUM_OBJ(charObj) == T_CHAR);
+    return *(const UChar *)UNSAFE_CONST_ADDR_OBJ(charObj);
+}
+
+
 /****************************************************************************
 **
 *F  SET_CHAR_VALUE( <charObj>, <c> )
@@ -133,10 +140,24 @@ static inline Char * CSTR_STRING(Obj list)
     return (Char *)ADDR_OBJ(list) + sizeof(UInt);
 }
 
+
+static inline Char * UNSAFE_CSTR_STRING(Obj list)
+{
+    GAP_ASSERT(IS_STRING_REP(list));
+    return (Char *)UNSAFE_ADDR_OBJ(list) + sizeof(UInt);
+}
+
 static inline const Char * CONST_CSTR_STRING(Obj list)
 {
     GAP_ASSERT(IS_STRING_REP(list));
     return (const Char *)CONST_ADDR_OBJ(list) + sizeof(UInt);
+}
+
+
+static inline const Char * UNSAFE_CONST_CSTR_STRING(Obj list)
+{
+    GAP_ASSERT(IS_STRING_REP(list));
+    return (const Char *)UNSAFE_CONST_ADDR_OBJ(list) + sizeof(UInt);
 }
 
 static inline UChar * CHARS_STRING(Obj list)
@@ -145,10 +166,24 @@ static inline UChar * CHARS_STRING(Obj list)
     return (UChar *)ADDR_OBJ(list) + sizeof(UInt);
 }
 
+
+static inline UChar * UNSAFE_CHARS_STRING(Obj list)
+{
+    GAP_ASSERT(IS_STRING_REP(list));
+    return (UChar *)UNSAFE_ADDR_OBJ(list) + sizeof(UInt);
+}
+
 static inline const UChar * CONST_CHARS_STRING(Obj list)
 {
     GAP_ASSERT(IS_STRING_REP(list));
     return (const UChar *)CONST_ADDR_OBJ(list) + sizeof(UInt);
+}
+
+
+static inline const UChar * UNSAFE_CONST_CHARS_STRING(Obj list)
+{
+    GAP_ASSERT(IS_STRING_REP(list));
+    return (const UChar *)UNSAFE_CONST_ADDR_OBJ(list) + sizeof(UInt);
 }
 
 /****************************************************************************
@@ -164,6 +199,13 @@ static inline UInt GET_LEN_STRING(Obj list)
     return *((const UInt *)CONST_ADDR_OBJ(list));
 }
 
+
+static inline UInt UNSAFE_GET_LEN_STRING(Obj list)
+{
+    GAP_ASSERT(IS_STRING_REP(list));
+    return *((const UInt *)UNSAFE_CONST_ADDR_OBJ(list));
+}
+
 /****************************************************************************
 **
 *F  SET_LEN_STRING( <list>, <len> ) . . . . . . . . . set length of a string
@@ -177,6 +219,15 @@ static inline void SET_LEN_STRING(Obj list, Int len)
     GAP_ASSERT(len >= 0);
     GAP_ASSERT(SIZEBAG_STRINGLEN(len) <= SIZE_OBJ(list));
     (*((UInt *)ADDR_OBJ(list)) = (UInt)(len));
+}
+
+
+static inline void UNSAFE_SET_LEN_STRING(Obj list, Int len)
+{
+    GAP_ASSERT(IS_STRING_REP(list));
+    GAP_ASSERT(len >= 0);
+    GAP_ASSERT(SIZEBAG_STRINGLEN(len) <= SIZE_OBJ(list));
+    (*((UInt *)UNSAFE_ADDR_OBJ(list)) = (UInt)(len));
 }
 
 /****************************************************************************
@@ -367,9 +418,26 @@ static inline Obj MakeString(const Char * cstr)
     return result;
 }
 
+
+static inline Obj UnsafeMakeString(const Char * cstr)
+{
+    size_t len = strlen(cstr);
+    Obj    result = NEW_STRING(len);
+    memcpy(UNSAFE_CHARS_STRING(result), cstr, len);
+    return result;
+}
+
 static inline Obj MakeImmString(const Char * cstr)
 {
     Obj result = MakeString(cstr);
+    MakeImmutableString(result);
+    return result;
+}
+
+
+static inline Obj UnsafeMakeImmString(const Char * cstr)
+{
+    Obj result = UnsafeMakeString(cstr);
     MakeImmutableString(result);
     return result;
 }

@@ -62,10 +62,10 @@ void RestoreSerializationState(volatile SerializeModuleState * state)
 static void WriteBytesNativeString(void * addr, UInt count)
 {
     Obj  target = MODULE_STATE(Serialize).obj;
-    UInt size = GET_LEN_STRING(target);
+    UInt size = UNSAFE_GET_LEN_STRING(target);
     GROW_STRING(target, size + count + 1);
-    memcpy(CSTR_STRING(target) + size, addr, count);
-    SET_LEN_STRING(target, size + count);
+    memcpy(UNSAFE_CSTR_STRING(target) + size, addr, count);
+    UNSAFE_SET_LEN_STRING(target, size + count);
 }
 
 static void WriteTNumNativeString(UInt tnum)
@@ -116,11 +116,11 @@ static void InitNativeStringSerializer(Obj string)
 static void ReadBytesNativeString(void * addr, UInt size)
 {
     Obj  str = MODULE_STATE(Serialize).obj;
-    UInt max = GET_LEN_STRING(str);
+    UInt max = UNSAFE_GET_LEN_STRING(str);
     UInt off = MODULE_STATE(Serialize).index;
     if (off + size > max)
         DeserializationError();
-    memcpy(addr, CONST_CSTR_STRING(str) + off, size);
+    memcpy(addr, UNSAFE_CONST_CSTR_STRING(str) + off, size);
     MODULE_STATE(Serialize).index += size;
 }
 
@@ -145,7 +145,7 @@ static UInt ReadByteBlockLengthNativeString(void)
     /* The following is to prevent out-of-memory errors on malformed input,
      * where incorrect values can result in huge length values: */
     if (len + MODULE_STATE(Serialize).index >
-        GET_LEN_STRING(MODULE_STATE(Serialize).obj))
+        UNSAFE_GET_LEN_STRING(MODULE_STATE(Serialize).obj))
         DeserializationError();
     return len;
 }
@@ -250,17 +250,17 @@ static inline int IsBasicObj(Obj obj)
 static inline void PushObj(Obj obj)
 {
     Obj stack = MODULE_STATE(Serialize).stack;
-    PushPlist(stack, obj);
+    UnsafePushPlist(stack, obj);
 }
 
 static inline Obj PopObj(void)
 {
     Obj  stack = MODULE_STATE(Serialize).stack;
-    UInt len = LEN_PLIST(stack);
-    Obj  result = ELM_PLIST(stack, len);
-    SET_ELM_PLIST(stack, len, (Obj)0);
+    UInt len = UNSAFE_LEN_PLIST(stack);
+    Obj  result = UNSAFE_ELM_PLIST(stack, len);
+    UNSAFE_SET_ELM_PLIST(stack, len, (Obj)0);
     len--;
-    SET_LEN_PLIST(stack, len);
+    UNSAFE_SET_LEN_PLIST(stack, len);
     return result;
 }
 
@@ -353,8 +353,8 @@ Obj DeserializeInt(UInt tnum)
 void SerializeRat(Obj obj)
 {
     WriteTNum(TNUM_OBJ(obj));
-    SerializeObj(NUM_RAT(obj));
-    SerializeObj(DEN_RAT(obj));
+    SerializeObj(UNSAFE_NUM_RAT(obj));
+    SerializeObj(UNSAFE_DEN_RAT(obj));
 }
 
 Obj DeserializeRat(UInt tnum)
@@ -363,8 +363,8 @@ Obj DeserializeRat(UInt tnum)
     n = DeserializeObj();
     d = DeserializeObj();
     result = NewBag(tnum, 2 * sizeof(Obj));
-    SET_NUM_RAT(result, n);
-    SET_DEN_RAT(result, d);
+    UNSAFE_SET_NUM_RAT(result, n);
+    UNSAFE_SET_DEN_RAT(result, d);
     return result;
 }
 
@@ -393,7 +393,7 @@ Obj DeserializeFFE(UInt tnum)
 
 void SerializeChar(Obj obj)
 {
-    UChar ch = CHAR_VALUE(obj);
+    UChar ch = UNSAFE_CHAR_VALUE(obj);
     WriteTNum(T_CHAR);
     WriteByte(ch);
 }
@@ -473,11 +473,11 @@ void SerializeList(Obj obj)
     UInt i, j, len;
     if (SerializedAlready(obj))
         return;
-    len = LEN_PLIST(obj);
+    len = UNSAFE_LEN_PLIST(obj);
     WriteTNum(TNUM_OBJ(obj));
     WriteImmediateObj(INTOBJ_INT(len));
     for (i = 1; i <= len; i++) {
-        Obj el = ELM_PLIST(obj, i);
+        Obj el = UNSAFE_ELM_PLIST(obj, i);
         if (IsBasicObj(el))
             SerializeObj(el);
         else {
@@ -485,7 +485,7 @@ void SerializeList(Obj obj)
         }
     }
     for (j = len; j >= i; j--) {
-        Obj el = ELM_PLIST(obj, j);
+        Obj el = UNSAFE_ELM_PLIST(obj, j);
         PushObj(el);
     }
 }
@@ -494,10 +494,10 @@ Obj DeserializeList(UInt tnum)
 {
     UInt i, len = INT_INTOBJ(ReadImmediateObj());
     Obj  result = NEW_PLIST(tnum, len);
-    SET_LEN_PLIST(result, len);
+    UNSAFE_SET_LEN_PLIST(result, len);
     PushObj(result);
     for (i = 1; i <= len; i++)
-        SET_ELM_PLIST(result, i, DeserializeObj());
+        UNSAFE_SET_ELM_PLIST(result, i, DeserializeObj());
     return result;
 }
 
@@ -506,12 +506,12 @@ void SerializeObjSet(Obj obj)
     UInt i, len;
     if (SerializedAlready(obj))
         return;
-    len = (UInt)(ADDR_OBJ(obj)[OBJSET_USED]);
+    len = (UInt)(UNSAFE_ADDR_OBJ(obj)[OBJSET_USED]);
     WriteTNum(TNUM_OBJ(obj));
     WriteImmediateObj(INTOBJ_INT(len));
-    len = (UInt)(ADDR_OBJ(obj)[OBJSET_SIZE]);
+    len = (UInt)(UNSAFE_ADDR_OBJ(obj)[OBJSET_SIZE]);
     for (i = 0; i < len; i++) {
-        Obj el = ADDR_OBJ(obj)[OBJSET_HDRSIZE + i];
+        Obj el = UNSAFE_ADDR_OBJ(obj)[OBJSET_HDRSIZE + i];
         if (!el || el == Undefined)
             continue;
         if (IsBasicObj(el))
@@ -537,13 +537,13 @@ void SerializeObjMap(Obj obj)
     UInt i, len;
     if (SerializedAlready(obj))
         return;
-    len = (UInt)(ADDR_OBJ(obj)[OBJSET_USED]);
+    len = (UInt)(UNSAFE_ADDR_OBJ(obj)[OBJSET_USED]);
     WriteTNum(TNUM_OBJ(obj));
     WriteImmediateObj(INTOBJ_INT(len));
-    len = (UInt)(ADDR_OBJ(obj)[OBJSET_SIZE]);
+    len = (UInt)(UNSAFE_ADDR_OBJ(obj)[OBJSET_SIZE]);
     for (i = 0; i < len; i++) {
-        Obj key = ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i];
-        Obj val = ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i + 1];
+        Obj key = UNSAFE_ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i];
+        Obj val = UNSAFE_ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i + 1];
         if (!key || key == Undefined)
             continue;
         if (IsBasicObj(key) && IsBasicObj(val)) {
@@ -576,15 +576,15 @@ void SerializeRecord(Obj obj)
     if (SerializedAlready(obj))
         return;
     WriteTNum(TNUM_OBJ(obj));
-    len = LEN_PREC(obj);
+    len = UNSAFE_LEN_PREC(obj);
     WriteImmediateObj(INTOBJ_INT(len));
     for (i = 1; i <= len; i++) {
-        UInt rnam = GET_RNAM_PREC(obj, i);
+        UInt rnam = UNSAFE_GET_RNAM_PREC(obj, i);
         Obj  rnams = NAME_RNAM(rnam);
-        WriteByteBlock(rnams, sizeof(UInt), GET_LEN_STRING(rnams));
+        WriteByteBlock(rnams, sizeof(UInt), UNSAFE_GET_LEN_STRING(rnams));
     }
     for (i = 1; i <= len; i++) {
-        Obj el = GET_ELM_PREC(obj, i);
+        Obj el = UNSAFE_GET_ELM_PREC(obj, i);
         if (IsBasicObj(el))
             SerializeObj(el);
         else {
@@ -592,7 +592,7 @@ void SerializeRecord(Obj obj)
         }
     }
     for (j = len; j >= i; j--) {
-        Obj el = GET_ELM_PREC(obj, j);
+        Obj el = UNSAFE_GET_ELM_PREC(obj, j);
         PushObj(el);
     }
 }
@@ -602,19 +602,19 @@ Obj DeserializeRecord(UInt tnum)
     UInt i, len = INT_INTOBJ(ReadImmediateObj());
     Obj  result = NEW_PREC(len);
     Obj  rnams = NEW_STRING(11);
-    SET_LEN_PREC(result, len);
+    UNSAFE_SET_LEN_PREC(result, len);
     PushObj(result);
     for (i = 1; i <= len; i++) {
         UInt rnam, rnamlen = ReadByteBlockLength();
         GROW_STRING(rnams, rnamlen + 1);
         ReadByteBlockData(rnams, sizeof(Obj), rnamlen);
-        CSTR_STRING(rnams)[rnamlen] = '\0';
-        rnam = RNamName(CONST_CSTR_STRING(rnams));
-        SET_RNAM_PREC(result, i, rnam);
+        UNSAFE_CSTR_STRING(rnams)[rnamlen] = '\0';
+        rnam = RNamName(UNSAFE_CONST_CSTR_STRING(rnams));
+        UNSAFE_SET_RNAM_PREC(result, i, rnam);
     }
     for (i = 1; i <= len; i++) {
         Obj el = DeserializeObj();
-        SET_ELM_PREC(result, i, el);
+        UNSAFE_SET_ELM_PREC(result, i, el);
     }
     SortPRecRNam(result, 1);
     if (tnum == T_PREC + IMMUTABLE)
@@ -627,16 +627,16 @@ void SerializeString(Obj obj)
     if (SerializedAlready(obj))
         return;
     WriteTNum(TNUM_OBJ(obj));
-    WriteByteBlock(obj, sizeof(UInt), GET_LEN_STRING(obj));
+    WriteByteBlock(obj, sizeof(UInt), UNSAFE_GET_LEN_STRING(obj));
 }
 
 Obj DeserializeString(UInt tnum)
 {
     UInt len = ReadByteBlockLength();
     Obj  result = NewBag(tnum, SIZEBAG_STRINGLEN(len));
-    SET_LEN_STRING(result, len);
+    UNSAFE_SET_LEN_STRING(result, len);
     ReadByteBlockData(result, sizeof(UInt), len);
-    CSTR_STRING(result)[len] = '\0';
+    UNSAFE_CSTR_STRING(result)[len] = '\0';
     PushObj(result);
     return result;
 }
@@ -661,9 +661,9 @@ Obj DeserializeBlist(UInt tnum)
 void SerializeRange(Obj obj)
 {
     WriteTNum(TNUM_OBJ(obj));
-    WriteImmediateObj(ADDR_OBJ(obj)[0]);
-    WriteImmediateObj(ADDR_OBJ(obj)[1]);
-    WriteImmediateObj(ADDR_OBJ(obj)[2]);
+    WriteImmediateObj(UNSAFE_ADDR_OBJ(obj)[0]);
+    WriteImmediateObj(UNSAFE_ADDR_OBJ(obj)[1]);
+    WriteImmediateObj(UNSAFE_ADDR_OBJ(obj)[2]);
 }
 
 Obj DeserializeRange(UInt tnum)
@@ -673,9 +673,9 @@ Obj DeserializeRange(UInt tnum)
     r2 = ReadImmediateObj();
     r3 = ReadImmediateObj();
     result = NewBag(tnum, 3 * sizeof(Obj));
-    ADDR_OBJ(result)[0] = r1;
-    ADDR_OBJ(result)[1] = r2;
-    ADDR_OBJ(result)[2] = r3;
+    UNSAFE_ADDR_OBJ(result)[0] = r1;
+    UNSAFE_ADDR_OBJ(result)[1] = r2;
+    UNSAFE_ADDR_OBJ(result)[2] = r3;
     return result;
 }
 
@@ -699,9 +699,9 @@ static Obj PosObjToList(Obj obj)
 {
     UInt i, len = SIZE_OBJ(obj) / sizeof(Obj) - 1;
     Obj  result = NEW_PLIST(T_PLIST, len);
-    SET_LEN_PLIST(result, len);
+    UNSAFE_SET_LEN_PLIST(result, len);
     for (i = 1; i <= len; i++)
-        SET_ELM_PLIST(result, i, ELM_PLIST(obj, i));
+        UNSAFE_SET_ELM_PLIST(result, i, UNSAFE_ELM_PLIST(obj, i));
     return result;
 }
 
@@ -754,7 +754,7 @@ retry:
         func = GVarFunction(&SERIALIZATION_UPDATE_TAGS_GVar);
         if (!func)
             return (Obj)0;
-        CALL_0ARGS(func);
+        UNSAFE_CALL_0ARGS(func);
         map = GVarObj(&DESERIALIZATION_TAG_INT_GVar);
         goto retry; /* more readable than a loop around the switch */
     default:
@@ -818,10 +818,10 @@ Obj DeserializeTypedObj(UInt tnum)
     namelen = ReadByteBlockLength();
     name = NEW_STRING(namelen);
     ReadByteBlockData(name, sizeof(UInt), namelen);
-    rnam = RNamName(CONST_CSTR_STRING(name));
+    rnam = RNamName(UNSAFE_CONST_CSTR_STRING(name));
     len = INT_INTOBJ(ReadImmediateObj());
     args = NEW_PLIST(T_PLIST, len);
-    SET_LEN_PLIST(args, len);
+    UNSAFE_SET_LEN_PLIST(args, len);
     for (i = 1; i <= len; i++) {
         if (ReadByte()) {
             Obj  obj;
@@ -837,11 +837,11 @@ Obj DeserializeTypedObj(UInt tnum)
                 obj = DeserializeObj();
                 break;
             }
-            SET_ELM_PLIST(args, i, obj);
+            UNSAFE_SET_ELM_PLIST(args, i, obj);
         }
         else {
             Obj obj = DeserializeObj();
-            SET_ELM_PLIST(args, i, obj);
+            UNSAFE_SET_ELM_PLIST(args, i, obj);
         }
     }
     deserialization_rec = GVarObj(&DESERIALIZER_GVar);
@@ -866,7 +866,7 @@ Obj LookupTypeTag(Obj type)
             return (Obj)0;
         func = GVarFunction(&SERIALIZATION_UPDATE_TAGS_GVar);
         if (func)
-            CALL_0ARGS(func);
+            UNSAFE_CALL_0ARGS(func);
         tags = GVarObj(&SERIALIZATION_TAG_GVar);
         result = LookupObjMap(tags, type);
         return result;
@@ -893,7 +893,7 @@ void SerializeTypedObj(Obj obj)
         case T_STRING:
         case T_STRING + IMMUTABLE:
             SerializeObj(rep);
-            UInt sp = LEN_PLIST(MODULE_STATE(Serialize).stack);
+            UInt sp = UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack);
             switch (TNUM_OBJ(obj)) {
             case T_DATOBJ:
                 WriteByteBlock(obj, sizeof(Obj), SIZE_OBJ(obj) - sizeof(Obj));
@@ -905,23 +905,23 @@ void SerializeTypedObj(Obj obj)
                 SerializeRecord(obj);
                 break;
             }
-            while (LEN_PLIST(MODULE_STATE(Serialize).stack) > sp) {
+            while (UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack) > sp) {
                 SerializeObj(PopObj());
             }
             return;
         }
     }
     WriteTNum(TNUM_OBJ(obj));
-    rep = CALL_1ARGS(GVarFunction(&SerializableRepresentationGVar), obj);
-    if (!rep || !IS_PLIST(rep) || LEN_PLIST(rep) == 0) {
+    rep = UNSAFE_CALL_1ARGS(GVarFunction(&SerializableRepresentationGVar), obj);
+    if (!rep || !IS_PLIST(rep) || UNSAFE_LEN_PLIST(rep) == 0) {
         SerRepError();
         return;
     }
     WriteByte(T_PLIST);
-    el1 = ELM_PLIST(rep, 1);
-    len = LEN_PLIST(rep);
+    el1 = UNSAFE_ELM_PLIST(rep, 1);
+    len = UNSAFE_LEN_PLIST(rep);
     if (len >= 2)
-        el2 = ELM_PLIST(rep, 2);
+        el2 = UNSAFE_ELM_PLIST(rep, 2);
     else
         el2 = 0;
     if (IS_STRING(el1)) {
@@ -940,11 +940,11 @@ void SerializeTypedObj(Obj obj)
         if (!name || !IS_STRING(name))
             SerRepError();
     }
-    WriteByteBlock(name, sizeof(UInt), GET_LEN_STRING(name));
+    WriteByteBlock(name, sizeof(UInt), UNSAFE_GET_LEN_STRING(name));
     WriteImmediateObj(INTOBJ_INT(len - start + 1));
     while (start <= len && skip > 0) {
-        Obj  el = ELM_PLIST(rep, start);
-        UInt sp = LEN_PLIST(MODULE_STATE(Serialize).stack);
+        Obj  el = UNSAFE_ELM_PLIST(rep, start);
+        UInt sp = UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack);
         switch (TNUM_OBJ(el)) {
         case T_DATOBJ:
             WriteByte(1);
@@ -971,18 +971,18 @@ void SerializeTypedObj(Obj obj)
             WriteByte(0);
             SerializeObj(el);
         }
-        while (LEN_PLIST(MODULE_STATE(Serialize).stack) > sp) {
+        while (UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack) > sp) {
             SerializeObj(PopObj());
         }
         start++;
         skip--;
     }
     while (start <= len) {
-        Obj  el = ELM_PLIST(rep, start);
-        UInt sp = LEN_PLIST(MODULE_STATE(Serialize).stack);
+        Obj  el = UNSAFE_ELM_PLIST(rep, start);
+        UInt sp = UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack);
         WriteByte(0);
         SerializeObj(el);
-        while (LEN_PLIST(MODULE_STATE(Serialize).stack) > sp) {
+        while (UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack) > sp) {
             SerializeObj(PopObj());
         }
         start++;
@@ -994,9 +994,9 @@ Obj DeserializeBackRef(UInt tnum)
     UInt ref = BACKREF_OBJ(ReadImmediateObj());
     if (!ref) /* special case for unbound entries */
         return (Obj)0;
-    if (ref > LEN_PLIST(MODULE_STATE(Serialize).stack))
+    if (ref > UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack))
         DeserializationError();
-    return ELM_PLIST(MODULE_STATE(Serialize).stack, ref);
+    return UNSAFE_ELM_PLIST(MODULE_STATE(Serialize).stack, ref);
 }
 
 void SerializeError(Obj obj)
@@ -1030,7 +1030,7 @@ Obj FuncSERIALIZE_TO_NATIVE_STRING(Obj self, Obj obj)
         syLongjmp(&(STATE(ReadJmpError)), 1);
     }
     SerializeObj(obj);
-    while (LEN_PLIST(MODULE_STATE(Serialize).stack) > 0)
+    while (UNSAFE_LEN_PLIST(MODULE_STATE(Serialize).stack) > 0)
         SerializeObj(PopObj());
     result = MODULE_STATE(Serialize).obj;
     memcpy(STATE(ReadJmpError), readJmpError, sizeof(syJmp_buf));

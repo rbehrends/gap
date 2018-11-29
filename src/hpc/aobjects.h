@@ -98,7 +98,7 @@ static inline int CompareAndSwapObj(Obj *addr, Obj old, Obj new_) {
 
 static inline void ATOMIC_SET_ELM_PLIST(Obj list, UInt index, Obj value) {
 #ifndef WARD_ENABLED
-  Obj *contents = ADDR_OBJ(list);
+  Obj *contents = UNSAFE_ADDR_OBJ(list);
   MEMBAR_WRITE(); /* ensure that contents[index] becomes visible to
                    * other threads only after value has become visible,
 		   * too.
@@ -109,7 +109,7 @@ static inline void ATOMIC_SET_ELM_PLIST(Obj list, UInt index, Obj value) {
 
 static inline Obj ATOMIC_SET_ELM_PLIST_ONCE(Obj list, UInt index, Obj value) {
 #ifndef WARD_ENABLED
-  Obj *contents = ADDR_OBJ(list);
+  Obj *contents = UNSAFE_ADDR_OBJ(list);
   Obj result;
   for (;;) {
     result = contents[index];
@@ -130,7 +130,7 @@ static inline Obj ATOMIC_SET_ELM_PLIST_ONCE(Obj list, UInt index, Obj value) {
 
 static inline Obj ATOMIC_ELM_PLIST(Obj list, UInt index) {
 #ifndef WARD_ENABLED
-  const Obj *contents = CONST_ADDR_OBJ(list);
+  const Obj *contents = UNSAFE_CONST_ADDR_OBJ(list);
   Obj result;
   result = contents[index];
   MEMBAR_READ(); /* matching memory barrier. */

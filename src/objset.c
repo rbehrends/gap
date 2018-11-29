@@ -389,9 +389,9 @@ void LoadObjSet(Obj set)
 #ifndef WARD_ENABLED
 void TraverseObjSet(TraversalState * traversal, Obj obj)
 {
-    UInt i, len = *(UInt *)(CONST_ADDR_OBJ(obj) + OBJSET_SIZE);
+    UInt i, len = *(UInt *)(UNSAFE_CONST_ADDR_OBJ(obj) + OBJSET_SIZE);
     for (i = 0; i < len; i++) {
-        Obj item = CONST_ADDR_OBJ(obj)[OBJSET_HDRSIZE + i];
+        Obj item = UNSAFE_CONST_ADDR_OBJ(obj)[OBJSET_HDRSIZE + i];
         if (item && item != Undefined)
             QueueForTraversal(traversal, item);
     }
@@ -399,10 +399,10 @@ void TraverseObjSet(TraversalState * traversal, Obj obj)
 
 void CopyObjSet(TraversalState * traversal, Obj copy, Obj original)
 {
-    UInt i, len = *(UInt *)(CONST_ADDR_OBJ(original) + OBJSET_SIZE);
+    UInt i, len = *(UInt *)(UNSAFE_CONST_ADDR_OBJ(original) + OBJSET_SIZE);
     for (i = 0; i < len; i++) {
-        Obj item = CONST_ADDR_OBJ(original)[OBJSET_HDRSIZE + i];
-        ADDR_OBJ(copy)[OBJSET_HDRSIZE + i] = ReplaceByCopy(traversal, item);
+        Obj item = UNSAFE_CONST_ADDR_OBJ(original)[OBJSET_HDRSIZE + i];
+        UNSAFE_ADDR_OBJ(copy)[OBJSET_HDRSIZE + i] = ReplaceByCopy(traversal, item);
     }
 }
 #endif // WARD_ENABLED
@@ -698,10 +698,10 @@ void LoadObjMap(Obj map)
 #ifndef WARD_ENABLED
 void TraverseObjMap(TraversalState * traversal, Obj obj)
 {
-    UInt i, len = *(UInt *)(CONST_ADDR_OBJ(obj) + OBJSET_SIZE);
+    UInt i, len = *(UInt *)(UNSAFE_CONST_ADDR_OBJ(obj) + OBJSET_SIZE);
     for (i = 0; i < len; i++) {
-        Obj key = CONST_ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i];
-        Obj val = CONST_ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i + 1];
+        Obj key = UNSAFE_CONST_ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i];
+        Obj val = UNSAFE_CONST_ADDR_OBJ(obj)[OBJSET_HDRSIZE + 2 * i + 1];
         if (key && key != Undefined) {
             QueueForTraversal(traversal, key);
             QueueForTraversal(traversal, val);
@@ -711,12 +711,12 @@ void TraverseObjMap(TraversalState * traversal, Obj obj)
 
 void CopyObjMap(TraversalState * traversal, Obj copy, Obj original)
 {
-    UInt i, len = *(UInt *)(CONST_ADDR_OBJ(original) + OBJSET_SIZE);
+    UInt i, len = *(UInt *)(UNSAFE_CONST_ADDR_OBJ(original) + OBJSET_SIZE);
     for (i = 0; i < len; i++) {
-        Obj key = CONST_ADDR_OBJ(original)[OBJSET_HDRSIZE + 2 * i];
-        Obj val = CONST_ADDR_OBJ(original)[OBJSET_HDRSIZE + 2 * i + 1];
-        ADDR_OBJ(copy)[OBJSET_HDRSIZE + 2 * i] = ReplaceByCopy(traversal, key);
-        ADDR_OBJ(copy)[OBJSET_HDRSIZE + 2 * i + 1] = ReplaceByCopy(traversal, val);
+        Obj key = UNSAFE_CONST_ADDR_OBJ(original)[OBJSET_HDRSIZE + 2 * i];
+        Obj val = UNSAFE_CONST_ADDR_OBJ(original)[OBJSET_HDRSIZE + 2 * i + 1];
+        UNSAFE_ADDR_OBJ(copy)[OBJSET_HDRSIZE + 2 * i] = ReplaceByCopy(traversal, key);
+        UNSAFE_ADDR_OBJ(copy)[OBJSET_HDRSIZE + 2 * i + 1] = ReplaceByCopy(traversal, val);
     }
 }
 #endif

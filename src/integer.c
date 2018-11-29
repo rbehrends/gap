@@ -224,7 +224,7 @@ Obj FuncIS_INT ( Obj self, Obj val )
 */
 void SaveInt( Obj gmp )
 {
-  const UInt *ptr = CONST_ADDR_INT(gmp);
+  const UInt *ptr = UNSAFE_CONST_ADDR_INT(gmp);
   for (UInt i = 0; i < SIZE_INT(gmp); i++)
       SaveUInt(*ptr++);
   return;
@@ -239,7 +239,7 @@ void SaveInt( Obj gmp )
 */
 void LoadInt( Obj gmp )
 {
-  UInt *ptr = ADDR_INT(gmp);
+  UInt *ptr = UNSAFE_ADDR_INT(gmp);
   for (UInt i = 0; i < SIZE_INT(gmp); i++)
       *ptr++ = LoadUInt();
   return;
@@ -371,13 +371,13 @@ static Obj GMPorINTOBJ_MPZ( mpz_t v )
 /* UPDATE_FAKEMPZ is a helper function for the MPZ_FAKEMPZ macro */
 static inline void UPDATE_FAKEMPZ( fake_mpz_t fake )
 {
-  fake->v->_mp_d = fake->obj ? (mp_ptr)ADDR_INT(fake->obj) : &fake->tmp;
+  fake->v->_mp_d = fake->obj ? (mp_ptr)UNSAFE_ADDR_INT(fake->obj) : &fake->tmp;
 }
 
 /* some extra debugging tools for FAKMPZ objects */
 #if DEBUG_GMP
 #define CHECK_FAKEMPZ(fake) \
-    assert( ((fake)->v->_mp_d == ((fake)->obj ? (mp_ptr)ADDR_INT((fake)->obj) : &(fake)->tmp )) \
+    assert( ((fake)->v->_mp_d == ((fake)->obj ? (mp_ptr)UNSAFE_ADDR_INT((fake)->obj) : &(fake)->tmp )) \
         &&  (fake->v->_mp_alloc == ((fake)->obj ? SIZE_INT((fake)->obj) : 1 )) )
 #else
 #define CHECK_FAKEMPZ(fake)  do { } while(0);
@@ -399,7 +399,7 @@ Obj GMP_NORMALIZE ( Obj gmp )
     return gmp;
   }
   for ( size = SIZE_INT(gmp); size != (mp_size_t)1; size-- ) {
-    if ( CONST_ADDR_INT(gmp)[(size - 1)] != 0 ) {
+    if ( UNSAFE_CONST_ADDR_INT(gmp)[(size - 1)] != 0 ) {
       break;
     }
   }
@@ -445,7 +445,7 @@ int IS_NORMALIZED_AND_REDUCED( Obj op, const char *func, int line )
     return 0;
   }
   for ( size = SIZE_INT(op); size != (mp_size_t)1; size-- ) {
-    if ( CONST_ADDR_INT(op)[(size - 1)] != 0 ) {
+    if ( UNSAFE_CONST_ADDR_INT(op)[(size - 1)] != 0 ) {
       break;
     }
   }
@@ -545,7 +545,7 @@ Obj ObjInt_Int8( Int8 i )
      i = -i;
   }
 
-  UInt *ptr = ADDR_INT(gmp);
+  UInt *ptr = UNSAFE_ADDR_INT(gmp);
   ptr[0] = (UInt4)i;
   ptr[1] = ((UInt8)i) >> 32;
   return gmp;
@@ -564,7 +564,7 @@ Obj ObjInt_UInt8( UInt8 i )
   /* we need two limbs to store this integer */
   assert( sizeof(mp_limb_t) == 4 );
   Obj gmp = NewBag( T_INTPOS, 2 * sizeof(mp_limb_t) );
-  UInt *ptr = ADDR_INT(gmp);
+  UInt *ptr = UNSAFE_ADDR_INT(gmp);
   ptr[0] = (UInt4)i;
   ptr[1] = ((UInt8)i) >> 32;
   return gmp;
@@ -643,7 +643,7 @@ Int8 Int8_ObjInt(Obj i)
     if (SIZE_INT(i) > 2)
         ErrorMayQuit("Conversion error, integer too large", 0L, 0L);
     UInt  vall = VAL_LIMB0(i);
-    UInt  valh = (SIZE_INT(i) == 1) ? 0 : CONST_ADDR_INT(i)[1];
+    UInt  valh = (SIZE_INT(i) == 1) ? 0 : UNSAFE_CONST_ADDR_INT(i)[1];
     UInt8 val = (UInt8)vall + ((UInt8)valh << 32);
     // now check if val is small enough to fit in the signed Int8 type
     // that has a range from -2^63 to 2^63-1 so we need to check both ends
@@ -671,7 +671,7 @@ UInt8 UInt8_ObjInt(Obj i)
     if (SIZE_INT(i) > 2)
         ErrorMayQuit("Conversion error, integer too large", 0L, 0L);
     UInt vall = VAL_LIMB0(i);
-    UInt valh = (SIZE_INT(i) == 1) ? 0 : CONST_ADDR_INT(i)[1];
+    UInt valh = (SIZE_INT(i) == 1) ? 0 : UNSAFE_CONST_ADDR_INT(i)[1];
     return (UInt8)vall + ((UInt8)valh << 32);
 #endif
 }
@@ -695,7 +695,7 @@ Obj MakeObjInt(const UInt * limbs, int size)
         UInt tnum = (size > 0 ? T_INTPOS : T_INTNEG);
         if (size < 0) size = -size;
         obj = NewBag(tnum, size * sizeof(mp_limb_t));
-        memcpy(ADDR_INT(obj), limbs, size * sizeof(mp_limb_t));
+        memcpy(UNSAFE_ADDR_INT(obj), limbs, size * sizeof(mp_limb_t));
 
         obj = GMP_NORMALIZE(obj);
         obj = GMP_REDUCE(obj);
@@ -746,14 +746,14 @@ void PrintInt ( Obj op )
     mpz_t v;
     v->_mp_alloc = SIZE_INT(op);
     v->_mp_size = IS_INTPOS(op) ? v->_mp_alloc : -v->_mp_alloc;
-    v->_mp_d = (mp_ptr)ADDR_INT(op);
+    v->_mp_d = (mp_ptr)UNSAFE_ADDR_INT(op);
     mpz_get_str(buf, 10, v);
 
     /* print the buffer, %> means insert '\' before a linebreak            */
     Pr("%>%s%<",(Int)buf, 0);
   }
   else {
-    Obj str = CALL_1ARGS( String, op );
+    Obj str = UNSAFE_CALL_1ARGS( String, op );
     Pr("%>", 0, 0);
     PrintString1(str);
     Pr("%<", 0, 0);
@@ -784,7 +784,7 @@ static Obj StringIntBase( Obj gmp, int base )
   /* 0 is special */
   if ( gmp == INTOBJ_INT(0) ) {
     res = NEW_STRING(1);
-    CHARS_STRING(res)[0] = '0';
+    UNSAFE_CHARS_STRING(res)[0] = '0';
     return res;
   }
 
@@ -796,12 +796,12 @@ static Obj StringIntBase( Obj gmp, int base )
   res = NEW_STRING( len );
 
   /* ask GMP to perform the actual conversion */
-  mpz_get_str( CSTR_STRING( res ), -base, MPZ_FAKEMPZ(v) );
+  mpz_get_str( UNSAFE_CSTR_STRING( res ), -base, MPZ_FAKEMPZ(v) );
 
   /* we may have to shrink the string */
-  int real_len = strlen( CONST_CSTR_STRING(res) );
-  if ( real_len != GET_LEN_STRING(res) ) {
-    SET_LEN_STRING(res, real_len);
+  int real_len = strlen( UNSAFE_CONST_CSTR_STRING(res) );
+  if ( real_len != UNSAFE_GET_LEN_STRING(res) ) {
+    UNSAFE_SET_LEN_STRING(res, real_len);
   }
 
   return res;
@@ -864,12 +864,12 @@ Obj FuncIntHexString( Obj self,  Obj str )
 
   RequireStringRep("IntHexString", str);
 
-  len = GET_LEN_STRING(str);
+  len = UNSAFE_GET_LEN_STRING(str);
   if (len == 0) {
     res = INTOBJ_INT(0);
     return res;
   }
-  p = CONST_CHARS_STRING(str);
+  p = UNSAFE_CONST_CHARS_STRING(str);
   if (*p == '-') {
     sign = -1;
     i = 1;
@@ -897,8 +897,8 @@ Obj FuncIntHexString( Obj self,  Obj str )
     res = NewBag( (sign == 1) ? T_INTPOS : T_INTNEG, (nd + 1) * sizeof(mp_limb_t) );
 
     /* update pointer, in case a garbage collection happened */
-    p = CONST_CHARS_STRING(str) + i;
-    limbs = ADDR_INT(res);
+    p = UNSAFE_CONST_CHARS_STRING(str) + i;
+    limbs = UNSAFE_ADDR_INT(res);
 
     /* if len is not divisible by 2*INTEGER_UNIT_SIZE, then take care of the extra bytes */
     UInt diff = len - nd * (2*INTEGER_UNIT_SIZE);
@@ -994,7 +994,7 @@ Obj FuncLog2Int( Obj self, Obj integer)
     }
 
     UInt len = SIZE_INT(integer) - 1;
-    UInt a = CLog2UInt( CONST_ADDR_INT(integer)[len] );
+    UInt a = CLog2UInt( UNSAFE_CONST_ADDR_INT(integer)[len] );
 
     CHECK_INT(integer);
 
@@ -1034,7 +1034,7 @@ Obj IntStringInternal(Obj string, const Char *str)
 
     // if <string> is given, then we ignore <str>
     if (string)
-        str = CONST_CSTR_STRING(string);
+        str = UNSAFE_CONST_CSTR_STRING(string);
 
     // get the sign, if any
     sign = 1;
@@ -1062,7 +1062,7 @@ Obj IntStringInternal(Obj string, const Char *str)
             // refresh 'str', in case the arithmetic operations triggered
             // a garbage collection
             if (string)
-                str = CONST_CSTR_STRING(string);
+                str = UNSAFE_CONST_CSTR_STRING(string);
             pow = 1;
             low = 0;
         }
@@ -1070,7 +1070,7 @@ Obj IntStringInternal(Obj string, const Char *str)
     }
 
     // check if 0 char does not mark the end of the string
-    if (string && i < GET_LEN_STRING(string))
+    if (string && i < UNSAFE_GET_LEN_STRING(string))
         return Fail;
 
     // compose the integer value
@@ -1136,7 +1136,7 @@ Int EqInt ( Obj gmpL, Obj gmpR )
        || SIZE_INT(gmpL) != SIZE_INT(gmpR) )
     return 0L;
 
-  if ( mpn_cmp( (mp_srcptr)CONST_ADDR_INT(gmpL), (mp_srcptr)CONST_ADDR_INT(gmpR), SIZE_INT(gmpL) ) == 0 ) 
+  if ( mpn_cmp( (mp_srcptr)UNSAFE_CONST_ADDR_INT(gmpL), (mp_srcptr)UNSAFE_CONST_ADDR_INT(gmpR), SIZE_INT(gmpL) ) == 0 ) 
     return 1L;
   else
     return 0L;
@@ -1173,7 +1173,7 @@ Int LtInt ( Obj gmpL, Obj gmpR )
   else if ( SIZE_INT(gmpL) > SIZE_INT(gmpR) )
     res = 0;
   else
-    res = mpn_cmp( (mp_srcptr)CONST_ADDR_INT(gmpL), (mp_srcptr)CONST_ADDR_INT(gmpR), SIZE_INT(gmpL) ) < 0;
+    res = mpn_cmp( (mp_srcptr)UNSAFE_CONST_ADDR_INT(gmpL), (mp_srcptr)UNSAFE_CONST_ADDR_INT(gmpR), SIZE_INT(gmpL) ) < 0;
 
   /* if both arguments are negative, flip the result */
   if ( IS_INTNEG(gmpL) )
@@ -1323,7 +1323,7 @@ Obj AInvInt ( Obj gmp )
       inv = NewBag( T_INTPOS, SIZE_OBJ(gmp) );
     }
 
-    memcpy( ADDR_INT(inv), CONST_ADDR_INT(gmp), SIZE_OBJ(gmp) );
+    memcpy( UNSAFE_ADDR_INT(inv), UNSAFE_CONST_ADDR_INT(gmp), SIZE_OBJ(gmp) );
   }
   
   /* return the inverse                                                    */
@@ -1354,7 +1354,7 @@ Obj AbsInt( Obj op )
     return op;
   } else if ( IS_INTNEG(op) ) {
     a = NewBag( T_INTPOS, SIZE_OBJ(op) );
-    memcpy( ADDR_INT(a), CONST_ADDR_INT(op), SIZE_OBJ(op) );
+    memcpy( UNSAFE_ADDR_INT(a), UNSAFE_CONST_ADDR_INT(op), SIZE_OBJ(op) );
     return a;
   }
   return Fail;
@@ -1520,7 +1520,7 @@ static Obj ProdIntObj ( Obj n, Obj op )
     res = 0;
     for ( i = SIZE_INT(n); 0 < i; i-- ) {
       k = 8*sizeof(mp_limb_t);
-      l = CONST_ADDR_INT(n)[i-1];
+      l = UNSAFE_CONST_ADDR_INT(n)[i-1];
       while ( 0 < k ) {
         res = (res == 0 ? res : SUM( res, res ));
         k--;
@@ -1579,7 +1579,7 @@ Obj PowInt ( Obj gmpL, Obj gmpR )
     pow = INTOBJ_INT(1);
   }
   else if ( gmpL == INTOBJ_INT(-1) ) {
-    pow = IS_EVEN_INT(gmpR) ? INTOBJ_INT(1) : INTOBJ_INT(-1);
+    pow = UNSAFE_IS_EVEN_INT(gmpR) ? INTOBJ_INT(1) : INTOBJ_INT(-1);
   }
 
   /* power with a large exponent */
@@ -1671,7 +1671,7 @@ Obj             PowObjInt ( Obj op, Obj n )
     res = 0;
     for ( i = SIZE_INT(n); 0 < i; i-- ) {
       k = 8*sizeof(mp_limb_t);
-      l = CONST_ADDR_INT(n)[i-1];
+      l = UNSAFE_CONST_ADDR_INT(n)[i-1];
       while ( 0 < k ) {
         res = (res == 0 ? res : PROD( res, res ));
         k--;
@@ -1760,7 +1760,7 @@ Obj ModInt(Obj opL, Obj opR)
     
     /* otherwise use the gmp function to divide                            */
     else {
-      c = mpn_mod_1( (mp_srcptr)CONST_ADDR_INT(opL), SIZE_INT(opL), i );
+      c = mpn_mod_1( (mp_srcptr)UNSAFE_CONST_ADDR_INT(opL), SIZE_INT(opL), i );
     }
     
     // now c is the absolute value of the actual result. Thus, if the left
@@ -1798,9 +1798,9 @@ Obj ModInt(Obj opL, Obj opR)
                    (SIZE_INT(opL)-SIZE_INT(opR)+1)*sizeof(mp_limb_t) );
 
     /* and let gmp do the work                                             */
-    mpn_tdiv_qr( (mp_ptr)ADDR_INT(quo), (mp_ptr)ADDR_INT(mod), 0,
-                 (mp_srcptr)CONST_ADDR_INT(opL), SIZE_INT(opL),
-                 (mp_srcptr)CONST_ADDR_INT(opR), SIZE_INT(opR)    );
+    mpn_tdiv_qr( (mp_ptr)UNSAFE_ADDR_INT(quo), (mp_ptr)UNSAFE_ADDR_INT(mod), 0,
+                 (mp_srcptr)UNSAFE_CONST_ADDR_INT(opL), SIZE_INT(opL),
+                 (mp_srcptr)UNSAFE_CONST_ADDR_INT(opR), SIZE_INT(opR)    );
       
     /* reduce to small integer if possible, otherwise shrink bag           */
     mod = GMP_NORMALIZE( mod );
@@ -1897,8 +1897,8 @@ Obj QuoInt(Obj opL, Obj opR)
     if ( k < 0 ) k = -k;
 
     /* use gmp function for dividing by a 1-limb number                    */
-    mpn_divrem_1( (mp_ptr)ADDR_INT(quo), 0,
-                  (mp_srcptr)CONST_ADDR_INT(opL), SIZE_INT(opL),
+    mpn_divrem_1( (mp_ptr)UNSAFE_ADDR_INT(quo), 0,
+                  (mp_srcptr)UNSAFE_CONST_ADDR_INT(opL), SIZE_INT(opL),
                   k );
   }
   
@@ -1920,9 +1920,9 @@ Obj QuoInt(Obj opL, Obj opR)
       quo = NewBag( T_INTNEG,
                     (SIZE_INT(opL)-SIZE_INT(opR)+1)*sizeof(mp_limb_t) );
 
-    mpn_tdiv_qr( (mp_ptr)ADDR_INT(quo), (mp_ptr)ADDR_INT(rem), 0,
-                 (mp_srcptr)CONST_ADDR_INT(opL), SIZE_INT(opL),
-                 (mp_srcptr)CONST_ADDR_INT(opR), SIZE_INT(opR) );
+    mpn_tdiv_qr( (mp_ptr)UNSAFE_ADDR_INT(quo), (mp_ptr)UNSAFE_ADDR_INT(rem), 0,
+                 (mp_srcptr)UNSAFE_CONST_ADDR_INT(opL), SIZE_INT(opL),
+                 (mp_srcptr)UNSAFE_CONST_ADDR_INT(opR), SIZE_INT(opR) );
   }
   
   /* normalize and return the result                                       */
@@ -2022,7 +2022,7 @@ Obj RemInt(Obj opL, Obj opR)
     
     /* otherwise use the gmp function to divide                            */
     else {
-      c = mpn_mod_1( (mp_srcptr)CONST_ADDR_INT(opL), SIZE_INT(opL), i );
+      c = mpn_mod_1( (mp_srcptr)UNSAFE_CONST_ADDR_INT(opL), SIZE_INT(opL), i );
     }
 
     // adjust c for the sign of the left operand
@@ -2046,9 +2046,9 @@ Obj RemInt(Obj opL, Obj opR)
                   (SIZE_INT(opL)-SIZE_INT(opR)+1)*sizeof(mp_limb_t) );
     
     /* and let gmp do the work                                             */
-    mpn_tdiv_qr( (mp_ptr)ADDR_INT(quo),  (mp_ptr)ADDR_INT(rem), 0,
-                 (mp_srcptr)CONST_ADDR_INT(opL), SIZE_INT(opL),
-                 (mp_srcptr)CONST_ADDR_INT(opR), SIZE_INT(opR)    );
+    mpn_tdiv_qr( (mp_ptr)UNSAFE_ADDR_INT(quo),  (mp_ptr)UNSAFE_ADDR_INT(rem), 0,
+                 (mp_srcptr)UNSAFE_CONST_ADDR_INT(opL), SIZE_INT(opL),
+                 (mp_srcptr)UNSAFE_CONST_ADDR_INT(opR), SIZE_INT(opR)    );
     
     /* reduce to small integer if possible, otherwise shrink bag           */
     rem = GMP_NORMALIZE( rem );
@@ -2242,7 +2242,7 @@ Obj BinomialInt(Obj n, Obj k)
     // deal with n < 0
     if (IS_NEG_INT(n)) {
         // use the identity Binomial(n,k) = (-1)^k * Binomial(-n+k-1, k)
-        negate_result = IS_ODD_INT(k);
+        negate_result = UNSAFE_IS_ODD_INT(k);
         n = DiffInt(DiffInt(k,n), INTOBJ_INT(1));
     }
 
@@ -2402,7 +2402,7 @@ Obj FuncROOT_INT(Obj self, Obj n, Obj k)
 
     if (!IS_POS_INT(k))
         ErrorMayQuit("Root: <k> must be a positive integer", 0, 0);
-    if (IS_NEG_INT(n) && IS_EVEN_INT(k))
+    if (IS_NEG_INT(n) && UNSAFE_IS_EVEN_INT(k))
         ErrorMayQuit("Root: <n> is negative but <k> is even", 0, 0);
 
     if (k == INTOBJ_INT(1) || n == INTOBJ_INT(0))
@@ -2613,7 +2613,7 @@ Obj FuncRandomIntegerMT(Obj self, Obj mtstr, Obj nrbits)
   UInt4 *mt;
   UInt4 *pt;
   RequireStringRep("RandomIntegerMT", mtstr);
-  if (GET_LEN_STRING(mtstr) < 2500) {
+  if (UNSAFE_GET_LEN_STRING(mtstr) < 2500) {
      ErrorMayQuit(
          "RandomIntegerMT: <mtstr> must be a string with at least 2500 characters",
          0, 0);
@@ -2623,7 +2623,7 @@ Obj FuncRandomIntegerMT(Obj self, Obj mtstr, Obj nrbits)
 
   /* small int case */
   if (n <= NR_SMALL_INT_BITS) {
-     mt = (UInt4*) CHARS_STRING(mtstr);
+     mt = (UInt4*) UNSAFE_CHARS_STRING(mtstr);
 #ifdef SYS_IS_64_BIT
      if (n <= 32) {
        res = INTOBJ_INT((Int)(nextrandMT_int32(mt) & ((UInt4) -1L >> (32-n))));
@@ -2648,20 +2648,20 @@ Obj FuncRandomIntegerMT(Obj self, Obj mtstr, Obj nrbits)
      /* len = number of limbs we need (limbs currently are either 32 or 64 bit wide) */
      len = (qoff*4 +  sizeof(mp_limb_t) - 1) / sizeof(mp_limb_t);
      res = NewBag( T_INTPOS, len*sizeof(mp_limb_t) );
-     pt = (UInt4*) ADDR_INT(res);
-     mt = (UInt4*) CHARS_STRING(mtstr);
+     pt = (UInt4*) UNSAFE_ADDR_INT(res);
+     mt = (UInt4*) UNSAFE_CHARS_STRING(mtstr);
      for (i = 0; i < qoff; i++, pt++) {
        *pt = nextrandMT_int32(mt);
      }
      if (r != 0) {
        /* we generated too many random bits -- chop of the extra bits */
-       pt = (UInt4*) ADDR_INT(res);
+       pt = (UInt4*) UNSAFE_ADDR_INT(res);
        pt[qoff-1] = pt[qoff-1] & ((UInt4)(-1) >> (32-r));
      }
 #if defined(SYS_IS_64_BIT) && defined(WORDS_BIGENDIAN)
      // swap the halves of the 64bit words to match the
      // little endian resp. 32 bit versions of this code
-     pt = (UInt4 *)ADDR_INT(res);
+     pt = (UInt4 *)UNSAFE_ADDR_INT(res);
      for (i = 0; i < qoff; i += 2, pt += 2) {
        SWAP(UInt4, pt[0], pt[1]);
      }

@@ -118,7 +118,7 @@ extern Obj NewWord(Obj type, UInt npairs)
     ADDR_OBJ(word)[1] = INTOBJ_INT(npairs);
     SetTypeDatObj(word, type);
 #ifdef HPCGAP
-    MakeBagReadOnly(word);
+    MakeBagPublic(word);
 #endif
     return word;
 }

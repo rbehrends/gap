@@ -70,7 +70,7 @@ static UInt UsageCap[sizeof(UInt)*8];
 Obj TypeAList(Obj obj)
 {
   Obj result;
-  const Obj *addr = CONST_ADDR_OBJ(obj);
+  const Obj *addr = UNSAFE_CONST_ADDR_OBJ(obj);
   MEMBAR_READ();
   result = addr[1];
   return result != NULL ? result : TYPE_ALIST;
@@ -80,7 +80,7 @@ Obj TypeARecord(Obj obj)
 {
   Obj result;
   MEMBAR_READ();
-  result = CONST_ADDR_OBJ(obj)[0];
+  result = UNSAFE_CONST_ADDR_OBJ(obj)[0];
   return result != NULL ? result : TYPE_AREC;
 }
 
@@ -95,14 +95,14 @@ void SetTypeAList(Obj obj, Obj kind)
     case T_ALIST:
     case T_FIXALIST:
       HashLock(obj);
-      ADDR_OBJ(obj)[1] = kind;
+      UNSAFE_ADDR_OBJ(obj)[1] = kind;
       CHANGED_BAG(obj);
       RetypeBag(obj, T_APOSOBJ);
       HashUnlock(obj);
       break;
     case T_APOSOBJ:
       HashLock(obj);
-      ADDR_OBJ(obj)[1] = kind;
+      UNSAFE_ADDR_OBJ(obj)[1] = kind;
       CHANGED_BAG(obj);
       HashUnlock(obj);
       break;
@@ -112,7 +112,7 @@ void SetTypeAList(Obj obj, Obj kind)
 
 void SetTypeARecord(Obj obj, Obj kind)
 {
-  ADDR_OBJ(obj)[0] = kind;
+  UNSAFE_ADDR_OBJ(obj)[0] = kind;
   CHANGED_BAG(obj);
   RetypeBag(obj, T_ACOMOBJ);
   MEMBAR_WRITE();
@@ -160,11 +160,11 @@ static Obj FuncAtomicList(Obj self, Obj args)
 {
   Obj init;
   Int len;
-  switch (LEN_PLIST(args)) {
+  switch (UNSAFE_LEN_PLIST(args)) {
   case 0:
       return NewAtomicList(T_ALIST, 0);
   case 1:
-      init = ELM_PLIST(args, 1);
+      init = UNSAFE_ELM_PLIST(args, 1);
       if (IS_LIST(init)) {
           return NewAtomicListFrom(T_ALIST, init);
       }
@@ -177,12 +177,12 @@ static Obj FuncAtomicList(Obj self, Obj args)
               "AtomicList: Argument must be list or a non-negative integer");
       }
     case 2:
-        init = ELM_PLIST(args, 1);
+        init = UNSAFE_ELM_PLIST(args, 1);
         len = IS_INTOBJ(init) ? INT_INTOBJ(init) : -1;
         if (len < 0)
             ArgumentError(
                 "AtomicList: First argument must be a non-negative integer");
-        init = ELM_PLIST(args, 2);
+        init = UNSAFE_ELM_PLIST(args, 2);
         return NewAtomicListInit(T_ALIST, len, init);
     default:
       ArgumentError("AtomicList: Too many arguments");
@@ -194,11 +194,11 @@ static Obj FuncFixedAtomicList(Obj self, Obj args)
 {
   Obj init;
   Int len;
-  switch (LEN_PLIST(args)) {
+  switch (UNSAFE_LEN_PLIST(args)) {
   case 0:
       return NewAtomicList(T_FIXALIST, 0);
   case 1:
-      init = ELM_PLIST(args, 1);
+      init = UNSAFE_ELM_PLIST(args, 1);
       if (IS_LIST(init)) {
           return NewAtomicListFrom(T_FIXALIST, init);
       }
@@ -211,12 +211,12 @@ static Obj FuncFixedAtomicList(Obj self, Obj args)
                         "non-negative integer");
       }
     case 2:
-        init = ELM_PLIST(args, 1);
+        init = UNSAFE_ELM_PLIST(args, 1);
         len = IS_INTOBJ(init) ? INT_INTOBJ(init) : -1;
         if (len < 0)
             ArgumentError("FixedAtomicList: First argument must be a "
                           "non-negative integer");
-        init = ELM_PLIST(args, 2);
+        init = UNSAFE_ELM_PLIST(args, 2);
         return NewAtomicListInit(T_FIXALIST, len, init);
     default:
       ArgumentError("FixedAtomicList: Too many arguments");
@@ -432,10 +432,10 @@ Obj FromAtomicList(Obj list)
   data = CONST_ADDR_ATOM(list);
   len = ALIST_LEN((UInt) (data++->atom));
   result = NEW_PLIST(T_PLIST, len);
-  SET_LEN_PLIST(result, len);
+  UNSAFE_SET_LEN_PLIST(result, len);
   MEMBAR_READ();
   for (i=1; i<=len; i++)
-    SET_ELM_PLIST(result, i, data[i].obj);
+    UNSAFE_SET_ELM_PLIST(result, i, data[i].obj);
   CHANGED_BAG(result);
   return result;
 }
@@ -521,12 +521,12 @@ static void ExpandTLRecord(Obj obj)
   AtomicObj contents, newcontents;
   do {
     contents = *CONST_ADDR_ATOM(obj);
-    const Obj *table = CONST_ADDR_OBJ(contents.obj);
+    const Obj *table = UNSAFE_CONST_ADDR_OBJ(contents.obj);
     UInt thread = TLS(threadID);
     if (thread < (UInt)*table)
       return;
     newcontents.obj = NewBag(T_TLREC_INNER, sizeof(Obj) * (thread+TLR_DATA+1));
-    Obj *newtable = ADDR_OBJ(newcontents.obj);
+    Obj *newtable = UNSAFE_ADDR_OBJ(newcontents.obj);
     newtable[TLR_SIZE] = (Obj)(thread+1);
     newtable[TLR_DEFAULTS] = table[TLR_DEFAULTS];
     newtable[TLR_CONSTRUCTORS] = table[TLR_CONSTRUCTORS];
@@ -543,14 +543,14 @@ static void PrintAtomicList(Obj obj)
 
   if (TNUM_OBJ(obj) == T_FIXALIST)
     Pr("<fixed atomic list of size %d>",
-      ALIST_LEN((UInt)(CONST_ADDR_OBJ(obj)[0])), 0L);
+      ALIST_LEN((UInt)(UNSAFE_CONST_ADDR_OBJ(obj)[0])), 0L);
   else
-    Pr("<atomic list of size %d>", ALIST_LEN((UInt)(CONST_ADDR_OBJ(obj)[0])), 0L);
+    Pr("<atomic list of size %d>", ALIST_LEN((UInt)(UNSAFE_CONST_ADDR_OBJ(obj)[0])), 0L);
 }
 
 static inline Obj ARecordObj(Obj record)
 {
-  return CONST_ADDR_OBJ(record)[1];
+  return UNSAFE_CONST_ADDR_OBJ(record)[1];
 }
 
 static inline AtomicObj* ARecordTable(Obj record)
@@ -572,7 +572,7 @@ static void PrintAtomicRecord(Obj record)
 static void PrintTLRecord(Obj obj)
 {
   Obj contents = GetTLInner(obj);
-  const Obj *table = CONST_ADDR_OBJ(contents);
+  const Obj *table = UNSAFE_CONST_ADDR_OBJ(contents);
   Obj record = 0;
   Obj defrec = table[TLR_DEFAULTS];
   int comma = 0;
@@ -583,15 +583,15 @@ static void PrintTLRecord(Obj obj)
   }
   Pr("%2>rec( %2>", 0L, 0L);
   if (record) {
-    for (i = 1; i <= LEN_PREC(record); i++) {
-      Obj val = GET_ELM_PREC(record, i);
-      Pr("%H", (Int)NAME_RNAM(labs((Int)GET_RNAM_PREC(record, i))), 0L);
+    for (i = 1; i <= UNSAFE_LEN_PREC(record); i++) {
+      Obj val = UNSAFE_GET_ELM_PREC(record, i);
+      Pr("%H", (Int)NAME_RNAM(labs((Int)UNSAFE_GET_RNAM_PREC(record, i))), 0L);
       Pr ("%< := %>", 0L, 0L);
       if (val)
         PrintObj(val);
       else
         Pr("<undefined>", 0L, 0L);
-      if (i < LEN_PREC(record))
+      if (i < UNSAFE_LEN_PREC(record))
         Pr("%2<, %2>", 0L, 0L);
       else
         comma = 1;
@@ -821,7 +821,7 @@ Obj SetARecordField(Obj record, UInt field, Obj obj)
   else
     newdata[2*n+1].obj = result = obj;
   MEMBAR_WRITE(); /* memory barrier */
-  ADDR_OBJ(record)[1] = inner;
+  UNSAFE_ADDR_OBJ(record)[1] = inner;
   CHANGED_BAG(inner);
   CHANGED_BAG(record);
   HashUnlock(record);
@@ -880,7 +880,7 @@ Obj NewAtomicRecord(UInt capacity)
   table[AR_BITS].atom = bits;
   table[AR_SIZE].atom = 0;
   table[AR_POL].atom = AREC_RW;
-  ADDR_OBJ(result)[1] = arec;
+  UNSAFE_ADDR_OBJ(result)[1] = arec;
   CHANGED_BAG(arec);
   CHANGED_BAG(result);
   return result;
@@ -890,15 +890,15 @@ static Obj NewAtomicRecordFrom(Obj precord)
 {
   Obj result;
   AtomicObj *table;
-  UInt i, pos, len = LEN_PREC(precord);
+  UInt i, pos, len = UNSAFE_LEN_PREC(precord);
   result = NewAtomicRecord(len);
   table = ARecordTable(result);
   for (i=1; i<=len; i++) {
-    Int field = GET_RNAM_PREC(precord, i);
+    Int field = UNSAFE_GET_RNAM_PREC(precord, i);
     if (field < 0)
       field = -field;
     pos = ARecordFastInsert(table, field);
-    table[AR_DATA+2*pos+1].obj = GET_ELM_PREC(precord, i);
+    table[AR_DATA+2*pos+1].obj = UNSAFE_GET_ELM_PREC(precord, i);
   }
   CHANGED_BAG(ARecordObj(result));
   CHANGED_BAG(result);
@@ -951,11 +951,11 @@ Obj ShallowCopyARecord(Obj obj)
   Obj copy, inner, innerCopy;
   HashLock(obj);
   copy = NewBag(TNUM_BAG(obj), SIZE_BAG(obj));
-  memcpy(ADDR_OBJ(copy), CONST_ADDR_OBJ(obj), SIZE_BAG(obj));
-  inner = CONST_ADDR_OBJ(obj)[1];
+  memcpy(UNSAFE_ADDR_OBJ(copy), UNSAFE_CONST_ADDR_OBJ(obj), SIZE_BAG(obj));
+  inner = UNSAFE_CONST_ADDR_OBJ(obj)[1];
   innerCopy = NewBag(TNUM_BAG(inner), SIZE_BAG(inner));
-  memcpy(ADDR_OBJ(innerCopy), CONST_ADDR_OBJ(inner), SIZE_BAG(inner));
-  ADDR_OBJ(copy)[1] = innerCopy;
+  memcpy(UNSAFE_ADDR_OBJ(innerCopy), UNSAFE_CONST_ADDR_OBJ(inner), SIZE_BAG(inner));
+  UNSAFE_ADDR_OBJ(copy)[1] = innerCopy;
   HashUnlock(obj);
   CHANGED_BAG(innerCopy);
   CHANGED_BAG(copy);
@@ -967,16 +967,16 @@ static void UpdateThreadRecord(Obj record, Obj tlrecord)
   Obj inner;
   do {
     inner = GetTLInner(record);
-    ADDR_OBJ(inner)[TLR_DATA+TLS(threadID)] = tlrecord;
+    UNSAFE_ADDR_OBJ(inner)[TLR_DATA+TLS(threadID)] = tlrecord;
     MEMBAR_FULL(); /* memory barrier */
   } while (inner != GetTLInner(record));
   if (tlrecord) {
     if (TLS(tlRecords))
-      AssPlist(TLS(tlRecords), LEN_PLIST(TLS(tlRecords))+1, record);
+      AssPlist(TLS(tlRecords), UNSAFE_LEN_PLIST(TLS(tlRecords))+1, record);
     else {
       TLS(tlRecords) = NEW_PLIST(T_PLIST, 1);
-      SET_LEN_PLIST(TLS(tlRecords), 1);
-      SET_ELM_PLIST(TLS(tlRecords), 1, record);
+      UNSAFE_SET_LEN_PLIST(TLS(tlRecords), 1);
+      UNSAFE_SET_ELM_PLIST(TLS(tlRecords), 1, record);
       CHANGED_BAG(TLS(tlRecords));
     }
   }
@@ -991,7 +991,7 @@ Obj GetTLRecordField(Obj record, UInt rnam)
   TLS(currentRegion) = TLS(threadRegion);
   ExpandTLRecord(record);
   contents = GetTLInner(record);
-  table = ADDR_OBJ(contents);
+  table = UNSAFE_ADDR_OBJ(contents);
   tlrecord = table[TLR_DATA+TLS(threadID)];
   if (!tlrecord || !FindPRec(tlrecord, rnam, &pos, 1)) {
     Obj result;
@@ -1015,15 +1015,15 @@ Obj GetTLRecordField(Obj record, UInt rnam)
         UpdateThreadRecord(record, tlrecord);
       }
       if (func) {
-        if (NARG_FUNC(func) == 0)
-          result = CALL_0ARGS(func);
+        if (UNSAFE_NARG_FUNC(func) == 0)
+          result = UNSAFE_CALL_0ARGS(func);
         else
-          result = CALL_1ARGS(func, record);
+          result = UNSAFE_CALL_1ARGS(func, record);
         TLS(currentRegion) = savedRegion;
         if (!result) {
           if (!FindPRec(tlrecord, rnam, &pos, 1))
             return 0;
-          return GET_ELM_PREC(tlrecord, pos);
+          return UNSAFE_GET_ELM_PREC(tlrecord, pos);
         }
         AssPRec(tlrecord, rnam, result);
         return result;
@@ -1033,7 +1033,7 @@ Obj GetTLRecordField(Obj record, UInt rnam)
     }
   }
   TLS(currentRegion) = savedRegion;
-  return GET_ELM_PREC(tlrecord, pos);
+  return UNSAFE_GET_ELM_PREC(tlrecord, pos);
 }
 
 Obj ElmTLRecord(Obj record, UInt rnam)
@@ -1052,7 +1052,7 @@ void AssTLRecord(Obj record, UInt rnam, Obj value)
   Obj tlrecord;
   ExpandTLRecord(record);
   contents = GetTLInner(record);
-  table = ADDR_OBJ(contents);
+  table = UNSAFE_ADDR_OBJ(contents);
   tlrecord = table[TLR_DATA+TLS(threadID)];
   if (!tlrecord) {
     tlrecord = NEW_PREC(0);
@@ -1067,7 +1067,7 @@ void UnbTLRecord(Obj record, UInt rnam)
   Obj tlrecord;
   ExpandTLRecord(record);
   contents = GetTLInner(record);
-  table = ADDR_OBJ(contents);
+  table = UNSAFE_ADDR_OBJ(contents);
   tlrecord = table[TLR_DATA+TLS(threadID)];
   if (!tlrecord) {
     tlrecord = NEW_PREC(0);
@@ -1085,11 +1085,11 @@ Int IsbTLRecord(Obj record, UInt rnam)
 static Obj FuncAtomicRecord(Obj self, Obj args)
 {
   Obj arg;
-  switch (LEN_PLIST(args)) {
+  switch (UNSAFE_LEN_PLIST(args)) {
     case 0:
       return NewAtomicRecord(8);
     case 1:
-      arg = ELM_PLIST(args, 1);
+      arg = UNSAFE_ELM_PLIST(args, 1);
       if (IS_POS_INTOBJ(arg)) {
         return NewAtomicRecord(INT_INTOBJ(arg));
       }
@@ -1110,7 +1110,7 @@ static Obj FuncGET_ATOMIC_RECORD(Obj self, Obj record, Obj field, Obj def)
   if (TNUM_OBJ(record) != T_AREC)
     ArgumentError("GET_ATOMIC_RECORD: First argument must be an atomic record");
   RequireStringRep("GET_ATOMIC_RECORD", field);
-  fieldname = RNamName(CONST_CSTR_STRING(field));
+  fieldname = RNamName(UNSAFE_CONST_CSTR_STRING(field));
   result = GetARecordField(record, fieldname);
   return result ? result : def;
 }
@@ -1122,11 +1122,11 @@ static Obj FuncSET_ATOMIC_RECORD(Obj self, Obj record, Obj field, Obj value)
   if (TNUM_OBJ(record) != T_AREC)
     ArgumentError("SET_ATOMIC_RECORD: First argument must be an atomic record");
   RequireStringRep("SET_ATOMIC_RECORD", field);
-  fieldname = RNamName(CONST_CSTR_STRING(field));
+  fieldname = RNamName(UNSAFE_CONST_CSTR_STRING(field));
   result = SetARecordField(record, fieldname, value);
   if (!result)
     ErrorQuit("SET_ATOMIC_RECORD: Field '%s' already exists",
-      (UInt) CONST_CSTR_STRING(field), 0L);
+      (UInt) UNSAFE_CONST_CSTR_STRING(field), 0L);
   return result;
 }
 
@@ -1137,10 +1137,10 @@ static Obj FuncUNBIND_ATOMIC_RECORD(Obj self, Obj record, Obj field)
   if (TNUM_OBJ(record) != T_AREC)
     ArgumentError("UNBIND_ATOMIC_RECORD: First argument must be an atomic record");
   RequireStringRep("UNBIND_ATOMIC_RECORD", field);
-  fieldname = RNamName(CONST_CSTR_STRING(field));
+  fieldname = RNamName(UNSAFE_CONST_CSTR_STRING(field));
   if (GetARecordUpdatePolicy(record) != AREC_RW)
     ErrorQuit("UNBIND_ATOMIC_RECORD: Record elements cannot be changed",
-      (UInt) CONST_CSTR_STRING(field), 0L);
+      (UInt) UNSAFE_CONST_CSTR_STRING(field), 0L);
   exists = GetARecordField(record, fieldname);
   if (exists)
     SetARecordField(record, fieldname, (Obj) 0);
@@ -1153,10 +1153,10 @@ static Obj CreateTLDefaults(Obj defrec) {
   UInt i;
   TLS(currentRegion) = LimboRegion;
   result = NewBag(T_PREC, SIZE_BAG(defrec));
-  memcpy(ADDR_OBJ(result), CONST_ADDR_OBJ(defrec), SIZE_BAG(defrec));
-  for (i = 1; i <= LEN_PREC(defrec); i++) {
-    SET_ELM_PREC(result, i,
-      CopyReachableObjectsFrom(GET_ELM_PREC(result, i), 0, 1, 0));
+  memcpy(UNSAFE_ADDR_OBJ(result), UNSAFE_CONST_ADDR_OBJ(defrec), SIZE_BAG(defrec));
+  for (i = 1; i <= UNSAFE_LEN_PREC(defrec); i++) {
+    UNSAFE_SET_ELM_PREC(result, i,
+      CopyReachableObjectsFrom(UNSAFE_GET_ELM_PREC(result, i), 0, 1, 0));
   }
   CHANGED_BAG(result);
   TLS(currentRegion) = saved_region;
@@ -1166,36 +1166,36 @@ static Obj CreateTLDefaults(Obj defrec) {
 static Obj NewTLRecord(Obj defaults, Obj constructors) {
   Obj result = NewBag(T_TLREC, sizeof(AtomicObj));
   Obj inner = NewBag(T_TLREC_INNER, sizeof(Obj) * TLR_DATA);
-  ADDR_OBJ(inner)[TLR_SIZE] = 0;
-  ADDR_OBJ(inner)[TLR_DEFAULTS] = CreateTLDefaults(defaults);
+  UNSAFE_ADDR_OBJ(inner)[TLR_SIZE] = 0;
+  UNSAFE_ADDR_OBJ(inner)[TLR_DEFAULTS] = CreateTLDefaults(defaults);
   WriteGuard(constructors);
   SET_REGION(constructors, LimboRegion);
   MEMBAR_WRITE();
-  ADDR_OBJ(inner)[TLR_CONSTRUCTORS] = NewAtomicRecordFrom(constructors);
-  ((AtomicObj *)(ADDR_OBJ(result)))->obj = inner;
+  UNSAFE_ADDR_OBJ(inner)[TLR_CONSTRUCTORS] = NewAtomicRecordFrom(constructors);
+  ((AtomicObj *)(UNSAFE_ADDR_OBJ(result)))->obj = inner;
   CHANGED_BAG(result);
   return result;
 }
 
 void SetTLDefault(Obj record, UInt rnam, Obj value) {
   Obj inner = GetTLInner(record);
-  SetARecordField(ADDR_OBJ(inner)[TLR_DEFAULTS],
+  SetARecordField(UNSAFE_ADDR_OBJ(inner)[TLR_DEFAULTS],
     rnam, CopyReachableObjectsFrom(value, 0, 1, 0));
 }
 
 void SetTLConstructor(Obj record, UInt rnam, Obj func) {
   Obj inner = GetTLInner(record);
-  SetARecordField(ADDR_OBJ(inner)[TLR_CONSTRUCTORS],
+  SetARecordField(UNSAFE_ADDR_OBJ(inner)[TLR_CONSTRUCTORS],
     rnam, func);
 }
 
 
 static int OnlyConstructors(Obj precord) {
   UInt i, len;
-  len = LEN_PREC(precord);
+  len = UNSAFE_LEN_PREC(precord);
   for (i=1; i<=len; i++) {
-    Obj elm = GET_ELM_PREC(precord, i);
-    if (TNUM_OBJ(elm) != T_FUNCTION || (Int) NARG_FUNC(elm) != 0)
+    Obj elm = UNSAFE_GET_ELM_PREC(precord, i);
+    if (TNUM_OBJ(elm) != T_FUNCTION || (Int) UNSAFE_NARG_FUNC(elm) != 0)
       return 0;
   }
   return 1;
@@ -1203,20 +1203,20 @@ static int OnlyConstructors(Obj precord) {
 
 static Obj FuncThreadLocalRecord(Obj self, Obj args)
 {
-  switch (LEN_PLIST(args)) {
+  switch (UNSAFE_LEN_PLIST(args)) {
     case 0:
       return NewTLRecord(NEW_PREC(0), NEW_PREC(0));
     case 1:
-      if (TNUM_OBJ(ELM_PLIST(args, 1)) != T_PREC)
+      if (TNUM_OBJ(UNSAFE_ELM_PLIST(args, 1)) != T_PREC)
         ArgumentError("ThreadLocalRecord: First argument must be a record");
-      return NewTLRecord(ELM_PLIST(args, 1), NEW_PREC(0));
+      return NewTLRecord(UNSAFE_ELM_PLIST(args, 1), NEW_PREC(0));
     case 2:
-      if (TNUM_OBJ(ELM_PLIST(args, 1)) != T_PREC)
+      if (TNUM_OBJ(UNSAFE_ELM_PLIST(args, 1)) != T_PREC)
         ArgumentError("ThreadLocalRecord: First argument must be a record");
-      if (TNUM_OBJ(ELM_PLIST(args, 2)) != T_PREC ||
-          !OnlyConstructors(ELM_PLIST(args, 2)))
+      if (TNUM_OBJ(UNSAFE_ELM_PLIST(args, 2)) != T_PREC ||
+          !OnlyConstructors(UNSAFE_ELM_PLIST(args, 2)))
         ArgumentError("ThreadLocalRecord: Second argument must be a record containing parameterless functions");
-      return NewTLRecord(ELM_PLIST(args, 1), ELM_PLIST(args, 2));
+      return NewTLRecord(UNSAFE_ELM_PLIST(args, 1), UNSAFE_ELM_PLIST(args, 2));
     default:
       ArgumentError("ThreadLocalRecord: Too many arguments");
       return (Obj) 0; /* flow control hint */
@@ -1361,13 +1361,13 @@ void EnlargeAList(Obj list, Int pos)
                 newlen = newlen * 3 / 2 + 1;
             } while (pos > newlen);
             newlist = NewBag(T_ALIST, sizeof(AtomicObj) * (2 + newlen));
-            memcpy(PTR_BAG(newlist), PTR_BAG(list),
+            memcpy(UNSAFE_PTR_BAG(newlist), UNSAFE_PTR_BAG(list),
                    sizeof(AtomicObj) * (2 + len));
             addr = ADDR_ATOM(newlist);
             addr[0].atom = CHANGE_ALIST_LEN(pol, pos);
             MEMBAR_WRITE();
             /* TODO: Won't work with GASMAN */
-            SET_PTR_BAG(list, PTR_BAG(newlist));
+            SET_PTR_BAG(list, UNSAFE_PTR_BAG(newlist));
             MEMBAR_WRITE();
         }
         else {
@@ -1456,11 +1456,11 @@ UInt AddAList(Obj list, Obj obj)
     Obj newlist;
     newlen = len * 3 / 2 + 1;
     newlist = NewBag(T_ALIST, sizeof(AtomicObj) * ( 2 + newlen));
-    memcpy(PTR_BAG(newlist), PTR_BAG(list), sizeof(AtomicObj)*(2+len));
+    memcpy(UNSAFE_PTR_BAG(newlist), UNSAFE_PTR_BAG(list), sizeof(AtomicObj)*(2+len));
     addr = ADDR_ATOM(newlist);
     addr[0].atom = CHANGE_ALIST_LEN(pol, len + 1);
     MEMBAR_WRITE();
-    SET_PTR_BAG(list, PTR_BAG(newlist));
+    SET_PTR_BAG(list, UNSAFE_PTR_BAG(newlist));
     MEMBAR_WRITE();
   } else {
     addr[0].atom = CHANGE_ALIST_LEN(pol, len + 1);
@@ -1519,9 +1519,9 @@ Int DestroyAObjectsState(void)
     UInt i, len;
     records = TLS(tlRecords);
     if (records) {
-        len = LEN_PLIST(records);
+        len = UNSAFE_LEN_PLIST(records);
         for (i = 1; i <= len; i++)
-            UpdateThreadRecord(ELM_PLIST(records, i), (Obj)0);
+            UpdateThreadRecord(UNSAFE_ELM_PLIST(records, i), (Obj)0);
     }
     return 0;
 }
@@ -1617,7 +1617,7 @@ Obj BindOncePosObj(Obj obj, Obj index, Obj *new, int eval, const char *currFuncN
   n = INT_INTOBJ(index);
   ReadGuard(obj);
 #ifndef WARD_ENABLED
-  contents = PTR_BAG(obj);
+  contents = UNSAFE_PTR_BAG(obj);
   MEMBAR_READ();
   if (SIZE_BAG_CONTENTS(contents) / sizeof(Bag) <= n) {
     HashLock(obj);
@@ -1634,7 +1634,7 @@ Obj BindOncePosObj(Obj obj, Obj index, Obj *new, int eval, const char *currFuncN
     }
     /* reread contents pointer */
     HashUnlock(obj);
-    contents = PTR_BAG(obj);
+    contents = UNSAFE_PTR_BAG(obj);
     MEMBAR_READ();
   }
   /* already bound? */
@@ -1642,9 +1642,9 @@ Obj BindOncePosObj(Obj obj, Obj index, Obj *new, int eval, const char *currFuncN
   if (result && result != Fail)
     return result;
   if (eval)
-    *new = CALL_0ARGS(*new);
+    *new = UNSAFE_CALL_0ARGS(*new);
   HashLockShared(obj);
-  contents = PTR_BAG(obj);
+  contents = UNSAFE_PTR_BAG(obj);
   MEMBAR_READ();
   for (;;) {
     result = (Bag)(contents[n]);

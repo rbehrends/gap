@@ -153,6 +153,15 @@ static inline void SET_LEN_PLIST(Obj list, Int len)
 }
 
 
+static inline void UNSAFE_SET_LEN_PLIST(Obj list, Int len)
+{
+    GAP_ASSERT(IS_PLIST_OR_POSOBJ(list));
+    GAP_ASSERT(len >= 0);
+    GAP_ASSERT(len <= CAPACITY_PLIST(list));
+    UNSAFE_ADDR_OBJ(list)[0] = (Obj)len;
+}
+
+
 /****************************************************************************
 **
 *F  LEN_PLIST(<list>) . . . . . . . . . . . . . . . .  length of a plain list
@@ -164,6 +173,13 @@ static inline Int LEN_PLIST(Obj list)
 {
     GAP_ASSERT(IS_PLIST_OR_POSOBJ(list));
     return ((Int)(CONST_ADDR_OBJ(list)[0]));
+}
+
+
+static inline Int UNSAFE_LEN_PLIST(Obj list)
+{
+    GAP_ASSERT(IS_PLIST_OR_POSOBJ(list));
+    return ((Int)(UNSAFE_CONST_ADDR_OBJ(list)[0]));
 }
 
 
@@ -184,6 +200,15 @@ static inline void SET_ELM_PLIST(Obj list, Int pos, Obj val)
     ADDR_OBJ(list)[pos] = val;
 }
 
+
+static inline void UNSAFE_SET_ELM_PLIST(Obj list, Int pos, Obj val)
+{
+    GAP_ASSERT(IS_PLIST_OR_POSOBJ(list));
+    GAP_ASSERT(pos >= 1);
+    GAP_ASSERT(pos <= CAPACITY_PLIST(list));
+    UNSAFE_ADDR_OBJ(list)[pos] = val;
+}
+
 /****************************************************************************
 **
 *F  ELM_PLIST(<list>,<pos>) . . . . . . . . . . . . . element of a plain list
@@ -199,6 +224,15 @@ static inline Obj ELM_PLIST(Obj list, Int pos)
     GAP_ASSERT(pos >= 1);
     GAP_ASSERT(pos <= CAPACITY_PLIST(list));
     return CONST_ADDR_OBJ(list)[pos];
+}
+
+
+static inline Obj UNSAFE_ELM_PLIST(Obj list, Int pos)
+{
+    GAP_ASSERT(IS_PLIST_OR_POSOBJ(list));
+    GAP_ASSERT(pos >= 1);
+    GAP_ASSERT(pos <= CAPACITY_PLIST(list));
+    return UNSAFE_CONST_ADDR_OBJ(list)[pos];
 }
 
 /****************************************************************************
@@ -265,6 +299,18 @@ static inline UInt PushPlist(Obj list, Obj val)
     GROW_PLIST(list, pos);
     SET_LEN_PLIST(list, pos);
     SET_ELM_PLIST(list, pos, val);
+    if (IS_BAG_REF(val))
+        CHANGED_BAG(list);
+    return pos;
+}
+
+
+static inline UInt UnsafePushPlist(Obj list, Obj val)
+{
+    const UInt pos = UNSAFE_LEN_PLIST(list) + 1;
+    GROW_PLIST(list, pos);
+    UNSAFE_SET_LEN_PLIST(list, pos);
+    UNSAFE_SET_ELM_PLIST(list, pos, val);
     if (IS_BAG_REF(val))
         CHANGED_BAG(list);
     return pos;

@@ -59,10 +59,24 @@ static inline UInt * ADDR_INT(Obj obj)
     return (UInt *)ADDR_OBJ(obj);
 }
 
+
+static inline UInt * UNSAFE_ADDR_INT(Obj obj)
+{
+    GAP_ASSERT(IS_LARGEINT(obj));
+    return (UInt *)UNSAFE_ADDR_OBJ(obj);
+}
+
 static inline const UInt * CONST_ADDR_INT(Obj obj)
 {
     GAP_ASSERT(IS_LARGEINT(obj));
     return (const UInt *)CONST_ADDR_OBJ(obj);
+}
+
+
+static inline const UInt * UNSAFE_CONST_ADDR_INT(Obj obj)
+{
+    GAP_ASSERT(IS_LARGEINT(obj));
+    return (const UInt *)UNSAFE_CONST_ADDR_OBJ(obj);
 }
 
 
@@ -114,6 +128,14 @@ static inline Int IS_ODD_INT(Obj obj)
 }
 
 
+static inline Int UNSAFE_IS_ODD_INT(Obj obj)
+{
+    if (IS_INTOBJ(obj))
+        return ((Int)obj & 4) != 0;
+    return (*UNSAFE_CONST_ADDR_INT(obj)) & 1;
+}
+
+
 /****************************************************************************
 **
 **  'IS_EVEN_INT' returns 1 if 'obj' is an even large or immediate integer
@@ -122,6 +144,12 @@ static inline Int IS_ODD_INT(Obj obj)
 static inline Int IS_EVEN_INT(Obj obj)
 {
     return !IS_ODD_INT(obj);
+}
+
+
+static inline Int UNSAFE_IS_EVEN_INT(Obj obj)
+{
+    return !UNSAFE_IS_ODD_INT(obj);
 }
 
 

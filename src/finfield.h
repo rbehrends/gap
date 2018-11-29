@@ -56,6 +56,10 @@
 #include "ffdata.h"
 #include "system.h"
 
+#ifdef HPCGAP
+#include "hpc/aobjects.h"
+#endif
+
 /****************************************************************************
 **
 *T  FF  . . . . . . . . . . . . . . . . . . . . . type of small finite fields
@@ -116,7 +120,11 @@ typedef UInt2       FF;
 **  Note that 'SUCC_FF' is a macro, so do not call  it  with  arguments  that
 **  side effects.
 */
+#ifdef HPCGAP
+#define SUCC_FF(ff)             ((const FFV*)(1+CONST_ADDR_OBJ( ATOMIC_ELM_PLIST( SuccFF, ff ) )))
+#else
 #define SUCC_FF(ff)             ((const FFV*)(1+CONST_ADDR_OBJ( ELM_PLIST( SuccFF, ff ) )))
+#endif
 
 extern  Obj             SuccFF;
 
@@ -131,8 +139,13 @@ extern  Obj             SuccFF;
 **  Note that  'TYPE_FF' is a macro, so  do not call  it  with arguments that
 **  have side effects.
 */
+#ifdef HPCGAP
+#define TYPE_FF(ff)             (ATOMIC_ELM_PLIST( TypeFF, ff ))
+#define TYPE_FF0(ff)             (ATOMIC_ELM_PLIST( TypeFF0, ff ))
+#else
 #define TYPE_FF(ff)             (ELM_PLIST( TypeFF, ff ))
 #define TYPE_FF0(ff)             (ELM_PLIST( TypeFF0, ff ))
+#endif
 
 extern  Obj             TypeFF;
 extern  Obj             TypeFF0;

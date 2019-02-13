@@ -358,7 +358,7 @@ obj/%.lo: %.c cnf/GAP-CFLAGS cnf/GAP-CPPFLAGS libtool
 # Linker rules for gap executable
 ########################################################################
 
-LINK=$(LIBTOOL) --mode=link $(CC) -export-dynamic
+LINK=$(LIBTOOL) --mode=link $(CXX) -export-dynamic
 
 libgap.la: $(OBJS) cnf/GAP-LDFLAGS cnf/GAP-LIBS cnf/GAP-OBJS
 	$(QUIET_LINK)$(LINK) -no-undefined -rpath $(libdir) $(GAP_LDFLAGS) $(OBJS) $(GAP_LIBS) -o $@

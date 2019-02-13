@@ -41,6 +41,7 @@ typedef set<uintptr_t> ptr_set;
 
 static ptr_set live;
 static ptr_set marked;
+static ptr_set big;
 
 
 extern "C" {
@@ -396,13 +397,18 @@ static void alloc_bigval(void * addr, size_t size)
     node->size = size;
     node->prio = xorshift_rng();
     treap_insert(&bigvals, node);
+    big.insert((uintptr_t) addr);
 }
 
 static void free_bigval(void * p)
 {
     if (p) {
-        if (!treap_delete(&bigvals, p)) {
+        if (big.count((uintptr_t) p) == 0) {
             abort();
+        }
+        // big.erase((uintptr_t) p);
+        if (!treap_delete(&bigvals, p)) {
+            // abort();
         }
     }
 }
@@ -451,7 +457,7 @@ static void * AllocateBagMemory(UInt type, UInt size)
     memset(result, 0, size);
     if (TabFreeFuncBags[type])
         jl_gc_schedule_foreign_sweepfunc(JuliaTLS, (jl_value_t *)result);
-    live.insert((uintptr_t) result);
+    // live.insert((uintptr_t) result);
     return result;
 }
 
@@ -472,7 +478,7 @@ static inline int JMark(void * obj)
         // printf(">> %s\n", name);
         return 0;
     }
-    marked.insert((uintptr_t) obj);
+    // marked.insert((uintptr_t) obj);
     return jl_gc_mark_queue_obj(JuliaTLS, (jl_value_t *)obj);
 }
 
@@ -539,7 +545,7 @@ static void TryMark(void * p)
         void *t = jl_typeof(p2);
         if (t != datatype_mptr && t != datatype_bag && t != datatype_largebag)
             return;
-        if (live.count((uintptr_t) p2) == 0) {
+        if (0) { // live.count((uintptr_t) p2) == 0) {
             printf("%p\n", p2);
             if (t == datatype_mptr)
                 printf("MPTR\n");
@@ -872,7 +878,7 @@ Bag NewBag(UInt type, UInt size)
 
 #if defined(DISABLE_BIGVAL_TRACKING)
     bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
-    live.insert((uintptr_t) bag);
+    // live.insert((uintptr_t) bag);
     SET_PTR_BAG(bag, 0);
 #endif
 
@@ -886,7 +892,7 @@ Bag NewBag(UInt type, UInt size)
 #if !defined(DISABLE_BIGVAL_TRACKING)
     // allocate the new masterpointer
     bag = (Bag) jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
-    live.insert((uintptr_t) bag);
+    // live.insert((uintptr_t) bag);
     SET_PTR_BAG(bag, DATA(header));
 #else
     // change the masterpointer to reference the new bag memory

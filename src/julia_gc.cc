@@ -31,9 +31,11 @@ extern "C" {
 
 #include "julia.h"
 #include "julia_gcext.h"
+#include "julia_threads.h"
 }
 
 #include <set>
+#include <map>
 
 using namespace std;
 
@@ -42,9 +44,40 @@ typedef set<uintptr_t> ptr_set;
 static ptr_set live;
 static ptr_set marked;
 static ptr_set big;
-
+static ptr_set stack;
+static map<uintptr_t, Int> freed;
+static Int gc_gen;
 
 extern "C" {
+
+static jl_ptls_t       JuliaTLS, SaveTLS;
+
+typedef struct BigVal {
+  struct BigVal *next;
+  struct BigVal **prev;
+} BigVal;
+
+extern BigVal *big_objects_marked;
+
+size_t validate_bigval_list(BigVal *head) {
+  size_t result = 0;
+  while (head) {
+    result++;
+    if (head->next) {
+      if (head->next->prev != &head->next)
+        abort();
+    }
+    head = head->next;
+  }
+  return result;
+}
+
+size_t validate_bigval_lists() {
+  return validate_bigval_list(big_objects_marked)
+    + validate_bigval_list((BigVal *)JuliaTLS->heap.big_objects);
+}
+
+
 /****************************************************************************
 **
 **  Various options controlling special features of the Julia GC code follow
@@ -223,6 +256,10 @@ static treap_t * treap_free_list;
 treap_t * alloc_treap(void)
 {
     treap_t * result;
+    if (jl_get_ptls_states()->tid) {
+        printf("\nERROR: wrong thread\n");
+        abort();
+    }
     if (treap_free_list) {
         result = treap_free_list;
         treap_free_list = treap_free_list->right;
@@ -403,12 +440,29 @@ static void alloc_bigval(void * addr, size_t size)
 static void free_bigval(void * p)
 {
     if (p) {
+        size_t nbig = JuliaTLS->gc_cache.nbig_obj;
+        for (size_t i = 0; i < nbig; i++) {
+            void *q = JuliaTLS->gc_cache.big_obj[i];
+            if (q != p)
+                abort();
+            if (big.count((uintptr_t) q) == 0)
+                abort();
+        }
         if (big.count((uintptr_t) p) == 0) {
+            if (freed.count((uintptr_t) p) != 0) {
+                printf("%lld -> %lld\n", gc_gen, freed[(uintptr_t)p]);
+            }
             abort();
         }
-        // big.erase((uintptr_t) p);
+        big.erase((uintptr_t) p);
+        freed[(uintptr_t)p] = gc_gen;
         if (!treap_delete(&bigvals, p)) {
             // abort();
+        }
+        size_t items = validate_bigval_lists();
+        if (items != big.size()) {
+            printf("%ld:%ld\n", items, big.size());
+            abort();
         }
     }
 }
@@ -421,7 +475,6 @@ static jl_datatype_t * datatype_bag;
 static jl_datatype_t * datatype_largebag;
 static UInt            StackAlignBags;
 static Bag *           GapStackBottom;
-static jl_ptls_t       JuliaTLS, SaveTLS;
 static size_t          max_pool_obj_size;
 #if !defined(DISABLE_BIGVAL_TRACKING)
 static size_t          bigval_startoffset;
@@ -555,6 +608,7 @@ static void TryMark(void * p)
                 printf("LBAG\n");
             abort();
         }
+        stack.insert((uintptr_t) p2);
         JMark(p2);
     }
 }
@@ -689,6 +743,7 @@ static void PreGCHook(int full)
     // GAP. So we save the TLS pointer temporarily and restore it
     // afterwards. In the long run, JuliaTLS needs to simply become
     // a thread-local variable.
+    gc_gen++;
     SaveTLS = JuliaTLS;
     JuliaTLS = jl_get_ptls_states();
     // This is the same code as in VarsBeforeCollectBags() for GASMAN.

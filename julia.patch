@@ -1,0 +1,74 @@
+diff -r 5f96ecac3cbd src/gc.c
+--- a/src/gc.c	Sat Jan 12 16:19:04 2019 -0800
++++ b/src/gc.c	Mon Mar 04 09:34:33 2019 +0100
+@@ -19,6 +19,7 @@
+ 
+ static jl_gc_callback_list_t *gc_cblist_root_scanner;
+ static jl_gc_callback_list_t *gc_cblist_task_scanner;
++static jl_gc_callback_list_t *gc_cblist_gc_event;
+ static jl_gc_callback_list_t *gc_cblist_pre_gc;
+ static jl_gc_callback_list_t *gc_cblist_post_gc;
+ static jl_gc_callback_list_t *gc_cblist_notify_external_alloc;
+@@ -34,6 +35,9 @@
+         } \
+     } while (0)
+ 
++#define gc_event(ev) \
++    gc_invoke_callbacks(jl_gc_cb_gc_event_t, gc_cblist_gc_event, (ev))
++
+ static void jl_gc_register_callback(jl_gc_callback_list_t **list,
+         jl_gc_cb_func_t func)
+ {
+@@ -77,6 +81,15 @@
+         jl_gc_deregister_callback(&gc_cblist_task_scanner, (jl_gc_cb_func_t)cb);
+ }
+ 
++JL_DLLEXPORT void jl_gc_set_cb_gc_event(jl_gc_cb_gc_event_t cb, int enable)
++{
++    if (enable)
++        jl_gc_register_callback(&gc_cblist_gc_event, (jl_gc_cb_func_t)cb);
++    else
++        jl_gc_deregister_callback(&gc_cblist_gc_event, (jl_gc_cb_func_t)cb);
++}
++
++
+ JL_DLLEXPORT void jl_gc_set_cb_pre_gc(jl_gc_cb_pre_gc_t cb, int enable)
+ {
+     if (enable)
+@@ -169,7 +182,7 @@
+ pagetable_t memory_map;
+ 
+ // List of marked big objects.  Not per-thread.  Accessed only by master thread.
+-bigval_t *big_objects_marked = NULL;
++JL_DLLEXPORT bigval_t *big_objects_marked = NULL;
+ 
+ // finalization
+ // `ptls->finalizers` and `finalizer_list_marked` might have tagged pointers.
+@@ -924,6 +937,8 @@
+ #endif
+             gc_invoke_callbacks(jl_gc_cb_notify_external_free_t,
+                 gc_cblist_notify_external_free, (v));
++            v->next = NULL;
++            v->prev = NULL;
+             jl_free_aligned(v);
+         }
+         gc_time_count_big(old_bits, bits);
+diff -r 5f96ecac3cbd src/julia_gcext.h
+--- a/src/julia_gcext.h	Sat Jan 12 16:19:04 2019 -0800
++++ b/src/julia_gcext.h	Mon Mar 04 09:34:33 2019 +0100
+@@ -16,6 +16,7 @@
+ // through calling jl_gc_mark_queue_obj() and jl_gc_mark_queue_objarray().
+ typedef void (*jl_gc_cb_root_scanner_t)(int full);
+ typedef void (*jl_gc_cb_task_scanner_t)(jl_task_t *task, int full);
++typedef void (*jl_gc_cb_gc_event_t)(int ev);
+ 
+ // Callbacks that are invoked before and after a collection.
+ typedef void (*jl_gc_cb_pre_gc_t)(int full);
+@@ -27,6 +28,7 @@
+ 
+ JL_DLLEXPORT void jl_gc_set_cb_root_scanner(jl_gc_cb_root_scanner_t cb, int enable);
+ JL_DLLEXPORT void jl_gc_set_cb_task_scanner(jl_gc_cb_task_scanner_t cb, int enable);
++JL_DLLEXPORT void jl_gc_set_cb_gc_event(jl_gc_cb_gc_event_t cb, int enable);
+ JL_DLLEXPORT void jl_gc_set_cb_pre_gc(jl_gc_cb_pre_gc_t cb, int enable);
+ JL_DLLEXPORT void jl_gc_set_cb_post_gc(jl_gc_cb_post_gc_t cb, int enable);
+ JL_DLLEXPORT void jl_gc_set_cb_notify_external_alloc(jl_gc_cb_notify_external_alloc_t cb,

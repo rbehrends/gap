@@ -437,6 +437,14 @@ static void alloc_bigval(void * addr, size_t size)
     big.insert((uintptr_t) addr);
 }
 
+static void check_bigval_consistency(void) {
+    size_t items = validate_bigval_lists();
+    if (items != big.size()) {
+        printf("%ld:%ld\n", items, big.size());
+        abort();
+    }
+}
+
 static void free_bigval(void * p)
 {
     if (p) {
@@ -459,11 +467,7 @@ static void free_bigval(void * p)
         if (!treap_delete(&bigvals, p)) {
             // abort();
         }
-        size_t items = validate_bigval_lists();
-        if (items != big.size()) {
-            printf("%ld:%ld\n", items, big.size());
-            abort();
-        }
+        check_bigval_consistency();
     }
 }
 
@@ -781,6 +785,11 @@ static void PostGCHook(int full)
 #endif
 }
 
+static void GCEvent(int ev) {
+    // printf("GC Event: %d\n", ev);
+    check_bigval_consistency();
+}
+
 // the Julia marking function for master pointer objects (i.e., this function
 // is called by the Julia GC whenever it marks a GAP master pointer object)
 static uintptr_t JMarkMPtr(jl_ptls_t ptls, jl_value_t * obj)
@@ -831,6 +840,7 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     // TLS and thus need to be installed after initialization.
     jl_gc_set_cb_root_scanner(GapRootScanner, 1);
     jl_gc_set_cb_task_scanner(GapTaskScanner, 1);
+    jl_gc_set_cb_gc_event(GCEvent, 1);
     jl_gc_set_cb_pre_gc(PreGCHook, 1);
     jl_gc_set_cb_post_gc(PostGCHook, 1);
     // jl_gc_enable(0); /// DEBUGGING

@@ -477,6 +477,8 @@ static jl_module_t *   Module;
 static jl_datatype_t * datatype_mptr;
 static jl_datatype_t * datatype_bag;
 static jl_datatype_t * datatype_largebag;
+static jl_datatype_t * datatype_pseudoroot;
+static jl_value_t *    PseudoRoot;
 static UInt            StackAlignBags;
 static Bag *           GapStackBottom;
 static size_t          max_pool_obj_size;
@@ -676,38 +678,7 @@ static void GapRootScanner(int full)
     // mark our Julia module (this contains references to our custom data
     // types, which thus also will not be collected prematurely)
     JMark(Module);
-    jl_task_t * task = JuliaTLS->current_task;
-    size_t      size;
-    int         tid;
-    // We figure out the end of the stack from the current task. While
-    // `stack_bottom` is passed to InitBags(), we cannot use that if
-    // current_task != root_task.
-    char * stackend = (char *)jl_task_stack_buffer(task, &size, &tid);
-    stackend += size;
-    if (JuliaTLS->tid == 0 && JuliaTLS->root_task == task) {
-        stackend = (char *)GapStackBottom;
-    }
-
-    // allow installing a custom marking function. This is used for
-    // integrating GAP (possibly linked as a shared library) with other code
-    // bases which use their own form of garbage collection. For example,
-    // with Python (for SageMath).
-    if (ExtraMarkFuncBags)
-        (*ExtraMarkFuncBags)();
-
-    // scan the stack for further object references, and mark them
-    syJmp_buf registers;
-    sySetjmp(registers);
-    TryMarkRange(registers, (char *)registers + sizeof(syJmp_buf));
-    TryMarkRange((char *)registers + sizeof(syJmp_buf), stackend);
-
-    // mark all global objects
-    for (Int i = 0; i < GlobalCount; i++) {
-        Bag p = *GlobalAddr[i];
-        if (IS_BAG_REF(p)) {
-            JMark(p);
-        }
-    }
+    jl_gc_mark_queue_obj(JuliaTLS, PseudoRoot);
 }
 
 static void GapTaskScanner(jl_task_t * task, int root_task)
@@ -757,6 +728,7 @@ static void PreGCHook(int full)
     // we have to add a write barrier at the start of the GC, too.
     if (STATE(CurrLVars))
         CHANGED_BAG(STATE(CurrLVars));
+    jl_gc_wb_back((void *) PseudoRoot);
     /* information at the beginning of garbage collections                 */
     SyMsgsBags(full, 0, 0);
 #ifndef REQUIRE_PRECISE_MARKING
@@ -785,7 +757,7 @@ static void PostGCHook(int full)
 #endif
 }
 
-static void GCEvent(int ev) {
+void GCEvent(int ev) {
     // printf("GC Event: %d\n", ev);
     check_bigval_consistency();
 }
@@ -818,6 +790,46 @@ static uintptr_t JMarkBag(jl_ptls_t ptls, jl_value_t * obj)
     TabMarkFuncBags[tnum]((Bag)&contents);
     return YoungRef;
 }
+//
+// the Julia marking function for the pseudo root object (i.e., this function
+// is called to mark GAP roots).
+static uintptr_t JMarkRoot(jl_ptls_t ptls, jl_value_t * obj)
+{
+    jl_task_t * task = JuliaTLS->current_task;
+    size_t      size;
+    int         tid;
+    // We figure out the end of the stack from the current task. While
+    // `stack_bottom` is passed to InitBags(), we cannot use that if
+    // current_task != root_task.
+    char * stackend = (char *)jl_task_stack_buffer(task, &size, &tid);
+    stackend += size;
+    if (JuliaTLS->tid == 0 && JuliaTLS->root_task == task) {
+        stackend = (char *)GapStackBottom;
+    }
+
+    // allow installing a custom marking function. This is used for
+    // integrating GAP (possibly linked as a shared library) with other code
+    // bases which use their own form of garbage collection. For example,
+    // with Python (for SageMath).
+    if (ExtraMarkFuncBags)
+        (*ExtraMarkFuncBags)();
+
+    // scan the stack for further object references, and mark them
+    syJmp_buf registers;
+    sySetjmp(registers);
+    TryMarkRange(registers, (char *)registers + sizeof(syJmp_buf));
+    TryMarkRange((char *)registers + sizeof(syJmp_buf), stackend);
+
+    // mark all global objects
+    for (Int i = 0; i < GlobalCount; i++) {
+        Bag p = *GlobalAddr[i];
+        if (IS_BAG_REF(p)) {
+            JMark(p);
+        }
+    }
+    return 0;
+}
+
 
 void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
 {
@@ -849,6 +861,8 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     Module->parent = jl_main_module;
     jl_set_const(jl_main_module, jl_symbol("ForeignGAP"),
                  (jl_value_t *)Module);
+    datatype_pseudoroot = jl_new_foreign_type(jl_symbol("GAPRoot"), Module,
+                                        jl_any_type, JMarkRoot, NULL, 1, 0);
     datatype_mptr = jl_new_foreign_type(jl_symbol("MPtr"), Module,
                                         jl_any_type, JMarkMPtr, NULL, 1, 0);
     datatype_bag = jl_new_foreign_type(jl_symbol("Bag"), Module, jl_any_type,
@@ -862,6 +876,10 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     jl_set_const(Module, jl_symbol("Bag"), (jl_value_t *)datatype_bag);
     jl_set_const(Module, jl_symbol("LargeBag"),
                  (jl_value_t *)datatype_largebag);
+    jl_set_const(Module, jl_symbol("GAPRoot"),
+                 (jl_value_t *)datatype_pseudoroot);
+    PseudoRoot = (jl_value_t *)jl_gc_alloc_typed(JuliaTLS, sizeof(void *),
+        datatype_pseudoroot);
 
     GAP_ASSERT(jl_is_datatype(datatype_mptr));
     GAP_ASSERT(jl_is_datatype(datatype_bag));
@@ -919,6 +937,8 @@ void RetypeBag(Bag bag, UInt new_type)
         Panic("cannot change bag type to one which requires a 'free' callback");
     }
     header->type = new_type;
+    jl_gc_wb_back((void *) header);
+    jl_gc_wb_back((void *) bag);
 }
 
 Bag NewBag(UInt type, UInt size)

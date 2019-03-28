@@ -14,6 +14,8 @@
 **  and gasman.c for two other garbage collector implementations.
 **/
 
+#define DISABLE_BIGVAL_TRACKING
+
 extern "C" {
 #include "fibhash.h"
 #include "funcs.h"
@@ -24,6 +26,7 @@ extern "C" {
 #include "sysmem.h"
 #include "system.h"
 #include "vars.h"
+#include "code.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,10 +44,10 @@ using namespace std;
 
 typedef set<uintptr_t> ptr_set;
 
-static ptr_set live;
-static ptr_set marked;
-static ptr_set big;
-static ptr_set stack;
+// static ptr_set live;
+// static ptr_set marked;
+// static ptr_set big;
+// static ptr_set stack;
 static map<uintptr_t, Int> freed;
 static Int gc_gen;
 
@@ -56,26 +59,6 @@ typedef struct BigVal {
   struct BigVal *next;
   struct BigVal **prev;
 } BigVal;
-
-extern BigVal *big_objects_marked;
-
-size_t validate_bigval_list(BigVal *head) {
-  size_t result = 0;
-  while (head) {
-    result++;
-    if (head->next) {
-      if (head->next->prev != &head->next)
-        abort();
-    }
-    head = head->next;
-  }
-  return result;
-}
-
-size_t validate_bigval_lists() {
-  return validate_bigval_list(big_objects_marked)
-    + validate_bigval_list((BigVal *)JuliaTLS->heap.big_objects);
-}
 
 
 /****************************************************************************
@@ -434,20 +417,13 @@ static void alloc_bigval(void * addr, size_t size)
     node->size = size;
     node->prio = xorshift_rng();
     treap_insert(&bigvals, node);
-    big.insert((uintptr_t) addr);
-}
-
-static void check_bigval_consistency(void) {
-    size_t items = validate_bigval_lists();
-    if (items != big.size()) {
-        printf("%ld:%ld\n", items, big.size());
-        abort();
-    }
+    // big.insert((uintptr_t) addr);
 }
 
 static void free_bigval(void * p)
 {
     if (p) {
+        /*
         size_t nbig = JuliaTLS->gc_cache.nbig_obj;
         for (size_t i = 0; i < nbig; i++) {
             void *q = JuliaTLS->gc_cache.big_obj[i];
@@ -462,8 +438,9 @@ static void free_bigval(void * p)
             }
             abort();
         }
-        big.erase((uintptr_t) p);
-        freed[(uintptr_t)p] = gc_gen;
+        */
+        // big.erase((uintptr_t) p);
+        // freed[(uintptr_t)p] = gc_gen;
         if (!treap_delete(&bigvals, p)) {
             // abort();
         }
@@ -534,7 +511,8 @@ static inline int JMark(void * obj)
     if (t != datatype_mptr && t != datatype_bag
      && t != datatype_largebag && t != jl_weakref_type) {
         char *name = jl_symbol_name(((jl_datatype_t *)t)->name->name);
-        // printf(">> %s\n", name);
+        printf(">> %s\n", name);
+        abort();
         return 0;
     }
     // marked.insert((uintptr_t) obj);
@@ -614,7 +592,7 @@ static void TryMark(void * p)
                 printf("LBAG\n");
             abort();
         }
-        stack.insert((uintptr_t) p2);
+        // stack.insert((uintptr_t) p2);
         JMark(p2);
     }
 }
@@ -677,7 +655,7 @@ static void GapRootScanner(int full)
 {
     // mark our Julia module (this contains references to our custom data
     // types, which thus also will not be collected prematurely)
-    JMark(Module);
+    // jl_gc_mark_queue_obj(JuliaTLS, (jl_value_t *) Module);
     jl_gc_mark_queue_obj(JuliaTLS, PseudoRoot);
 }
 
@@ -745,9 +723,9 @@ static void PostGCHook(int full)
     /* information at the end of garbage collections                 */
     UInt totalAlloc = 0;    // FIXME -- is this data even available?
     SyMsgsBags(full, 6, totalAlloc);
-    if (full)
-        live = marked;
-    marked.clear();
+    // if (full)
+    //     live = marked;
+    // marked.clear();
 #ifdef STAT_MARK_CACHE
     /* printf("\n>>>Attempts: %ld\nHit rate: %lf\nCollision rate: %lf\n",
       (long) MarkCacheAttempts,
@@ -755,11 +733,6 @@ static void PostGCHook(int full)
       (double) MarkCacheCollisions/(double)MarkCacheAttempts
       ); */
 #endif
-}
-
-void GCEvent(int ev) {
-    // printf("GC Event: %d\n", ev);
-    check_bigval_consistency();
 }
 
 // the Julia marking function for master pointer objects (i.e., this function
@@ -774,9 +747,10 @@ static uintptr_t JMarkMPtr(jl_ptls_t ptls, jl_value_t * obj)
         TryMark((void*)val);
     }
 #endif
-    if (JMark(BAG_HEADER((Bag)obj)))
-        return 1;
-    return 0;
+    uintptr_t result = JMark(BAG_HEADER((Bag)obj));
+    if (((void **) obj)[1])
+        result += JMark(((void **) obj)[1]);
+    return result;
 }
 
 // the Julia marking function for bags (i.e., this function is called by the
@@ -852,7 +826,6 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     // TLS and thus need to be installed after initialization.
     jl_gc_set_cb_root_scanner(GapRootScanner, 1);
     jl_gc_set_cb_task_scanner(GapTaskScanner, 1);
-    jl_gc_set_cb_gc_event(GCEvent, 1);
     jl_gc_set_cb_pre_gc(PreGCHook, 1);
     jl_gc_set_cb_post_gc(PostGCHook, 1);
     // jl_gc_enable(0); /// DEBUGGING
@@ -962,7 +935,7 @@ Bag NewBag(UInt type, UInt size)
         alloc_size++;
 
 #if defined(DISABLE_BIGVAL_TRACKING)
-    bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
+    bag = (Bag) jl_gc_alloc_typed(JuliaTLS, 4 * sizeof(void *), datatype_mptr);
     // live.insert((uintptr_t) bag);
     SET_PTR_BAG(bag, 0);
 #endif
@@ -976,7 +949,7 @@ Bag NewBag(UInt type, UInt size)
 
 #if !defined(DISABLE_BIGVAL_TRACKING)
     // allocate the new masterpointer
-    bag = (Bag) jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
+    bag = (Bag) jl_gc_alloc_typed(JuliaTLS, 4 * sizeof(void *), datatype_mptr);
     // live.insert((uintptr_t) bag);
     SET_PTR_BAG(bag, DATA(header));
 #else
@@ -984,6 +957,17 @@ Bag NewBag(UInt type, UInt size)
     SET_PTR_BAG(bag, DATA(header));
     jl_gc_wb_back((void *)bag);
 #endif
+    if (STATE(PtrLVars)) {
+        Stat call = STAT_LVARS_PTR(STATE(PtrLVars));
+        Int line = LINE_STAT(call);
+        bag[1] = (UInt *)CURR_FUNC();
+        bag[2] = (UInt *)line;
+        if (STATE(CurrLVars) != STATE(BottomLVars)) {
+            Obj plvars = PARENT_LVARS(STATE(CurrLVars));
+            if (plvars)
+                bag[3] = (UInt *)(FUNC_LVARS(plvars));
+        }
+    }
 
     // return the identifier of the new bag
     return bag;
@@ -1009,6 +993,12 @@ UInt ResizeBag(Bag bag, UInt new_size)
             alloc_size++;
 
         // allocate new bag
+        if (STATE(PtrLVars)) {
+            Stat call = STAT_LVARS_PTR(STATE(PtrLVars));
+            Int line = LINE_STAT(call);
+            bag[1] = (UInt *)CURR_FUNC();
+            bag[2] = (UInt *)line;
+        }
         header = (BagHeader *) AllocateBagMemory(header->type, alloc_size);
 
         // copy bag header and data, and update size

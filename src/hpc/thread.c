@@ -105,8 +105,23 @@ void UnlockThreadControl(void)
 
 #ifndef HAVE_NATIVE_TLS
 
+#ifdef PTHREAD_TLS
+static int init_tls_key = 0;
+static pthread_key_t TLSKey;
+
+pthread_key_t GetTLSKey(void)
+{
+    if (!init_tls_key) {
+        pthread_key_create(&TLSKey, NULL);
+        init_tls_key = 1;
+    }
+    return TLSKey;
+}
+#endif /* PTHREAD_TLS */
+
 void * AllocateTLS(void)
 {
+#ifndef PTHREAD_TLS
     void * addr;
     void * result;
     size_t pagesize = getpagesize();
@@ -126,6 +141,14 @@ void * AllocateTLS(void)
     mprotect((char *)result + tlssize, pagesize, PROT_NONE);
 #endif
     return result;
+#else
+    void * result = pthread_getspecific(GetTLSKey());
+    if (!result) {
+        result = malloc(sizeof(GAPState));
+        pthread_setspecific(GetTLSKey(), result);
+    }
+    return result;
+#endif /* PTHREAD_TLS */
 }
 
 void FreeTLS(void * address)
@@ -157,7 +180,7 @@ static void RemoveGCRoots(void)
 }
 #endif /* DISABLE_GC */
 
-#ifndef HAVE_NATIVE_TLS
+#if !defined(HAVE_NATIVE_TLS) && !defined(PTHREAD_TLS)
 
 /* In order to safely use thread-local memory on the main stack, we have
  * to work around an idiosyncracy in some virtual memory systems. These
@@ -191,7 +214,7 @@ static NOINLINE void GrowStack(void)
 
 static NOINLINE void SetupTLS(void)
 {
-#ifndef HAVE_NATIVE_TLS
+#if !defined(USE_NATIVE_TLS) && !defined(USE_PTHREAD_TLS)
     GrowStack();
 #endif
     InitializeTLS();
@@ -357,7 +380,6 @@ Obj RunThread(void (*start)(void *), void * arg)
     ThreadData * result;
 #ifndef HAVE_NATIVE_TLS
     void * tls;
-    size_t         pagesize = getpagesize();
 #endif
     pthread_attr_t thread_attr;
     LockThreadControl(1);
@@ -395,7 +417,8 @@ Obj RunThread(void (*start)(void *), void * arg)
     result->thread_object = NewThreadObject(result - thread_data);
     /* set up the thread attribute to support a custom stack in our TLS */
     pthread_attr_init(&thread_attr);
-#ifndef HAVE_NATIVE_TLS
+#if !defined(HAVE_NATIVE_TLS) && !defined(PTHREAD_TLS)
+    size_t         pagesize = getpagesize();
     pthread_attr_setstack(&thread_attr, (char *)tls + pagesize * 2,
                           TLS_SIZE - pagesize * 2);
 #endif
@@ -1232,6 +1255,8 @@ volatile int GuardDummy;
 
 #define BACKTRACE_DEPTH 128
 
+// Record the backtrace in a global GAP variable.
+
 void SetGuardErrorStack(void)
 {
     void *  callstack[BACKTRACE_DEPTH];
@@ -1250,6 +1275,7 @@ void SetGuardErrorStack(void)
         }
         *q++ = 0;
         SET_ELM_PLIST(stack, i, MakeImmString(calls[i]));
+        CHANGED_BAG(stack);
     }
     free(calls);
     SetGVar(&GUARD_ERROR_STACK, stack);

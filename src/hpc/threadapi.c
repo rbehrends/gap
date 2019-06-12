@@ -2046,6 +2046,8 @@ MigrateObjects(int count, Obj * objects, Region * target, int retype)
                 return 0;
         }
     }
+    // If we are migrating records to a region where they become immutable,
+    // they need to be sorted, as sorting upon access may prove impossible.
     for (i = 0; i < count; i++) {
         Obj obj = objects[i];
         if (TNUM_OBJ(obj) == T_PREC) {

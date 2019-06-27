@@ -36,14 +36,107 @@ extern "C" {
 #include <julia_gcext.h>
 }    // extern "C"
 
+
+
+/****************************************************************************
+**
+**  Various options controlling special features of the Julia GC code follow
+*/
+
+// if SCAN_STACK_FOR_MPTRS_ONLY is defined, stack scanning will only
+// look for references to master pointers, but not bags themselves. This
+// should be safe, as GASMAN uses the same mechanism. It is also faster
+// and avoids certain complicated issues that can lead to crashes, and
+// is therefore the default. The option to scan for all pointers remains
+// available for the time being and should be considered to be
+// deprecated.
+#define SCAN_STACK_FOR_MPTRS_ONLY
+
+// if REQUIRE_PRECISE_MARKING is defined, we assume that all marking
+// functions are precise, i.e., they only invoke MarkBag on valid bags,
+// immediate objects or NULL pointers, but not on any other random data
+// #define REQUIRE_PRECISE_MARKING
+
+// if COLLECT_MARK_CACHE_STATS is defined, we track some statistics about the
+// usage of the MarkCache
+// #define COLLECT_MARK_CACHE_STATS
+
+// if MARKING_STRESS_TEST is defined, we stress test the TryMark code
+// #define MARKING_STRESS_TEST
+
+// if VALIDATE_MARKING is defined, the program is aborted if we ever
+// encounter a reference during marking that does not meet additional
+// validation criteria. These tests are compararively expensive and
+// should not be enabled by default.
+// #define VALIDATE_MARKING
+
+
+namespace JuliaGC {
+
+// Comparing pointers in C without triggering undefined behavior
+// can be difficult. As the GC already assumes that the memory
+// range goes from 0 to 2^k-1 (region tables), we simply convert
+// to uintptr_t and compare those.
+
+static inline int cmp_ptr(void * p, void * q)
+{
+    uintptr_t paddr = (uintptr_t)p;
+    uintptr_t qaddr = (uintptr_t)q;
+    if (paddr < qaddr)
+        return -1;
+    else if (paddr > qaddr)
+        return 1;
+    else
+        return 0;
+}
+
+static inline int lt_ptr(void * a, void * b)
+{
+    return (uintptr_t)a < (uintptr_t)b;
+}
+
+#if 0
+static inline int gt_ptr(void * a, void * b)
+{
+    return (uintptr_t)a > (uintptr_t)b;
+}
+
+static inline void *max_ptr(void *a, void *b)
+{
+    if ((uintptr_t) a > (uintptr_t) b)
+        return a;
+    else
+        return b;
+}
+
+static inline void *min_ptr(void *a, void *b)
+{
+    if ((uintptr_t) a < (uintptr_t) b)
+        return a;
+    else
+        return b;
+}
+#endif
+
+/* align pointer to full word if mis-aligned */
+static inline void * align_ptr(void * p)
+{
+    uintptr_t u = (uintptr_t)p;
+    u &= ~(sizeof(p) - 1);
+    return (void *)u;
+}
+
+
 // So that we don't have to link against the standard C++ library, we do
 // manual allocation via alloc() and dealloc() routines that have their own
-// error handling. Allocate instances of Array and BalancedTree via
-// Array<T>::make(...) and BalancedTree<T, f>::make(...).
+// error handling. Allocate instances of ArrayList and BalancedTree via
+// ArrayList<T>::make(...) and BalancedTree<T, f>::make(...).
 //
 // Likewise, ...::destroy(...) can be used to deallocate the data structures
 // and their contents. If placed in manually allocated memory, call init()
 // and deinit() to initialize and deinitialize them.
+//
+
 
 class StdAlloc {
   protected:
@@ -68,7 +161,7 @@ class StdAlloc {
 };
 
 template <typename T>
-class Array : public StdAlloc {
+class ArrayList : public StdAlloc {
   private:
     Int _len, _cap;
     T * _data;
@@ -86,11 +179,11 @@ class Array : public StdAlloc {
     {
         return _data[i];
     }
-    Array(Int cap)
+    ArrayList(Int cap)
     {
         init(cap);
     }
-    ~Array()
+    ~ArrayList()
     {
         deinit();
     }
@@ -100,13 +193,13 @@ class Array : public StdAlloc {
         _cap = cap;
         _data = alloc<T>(cap);
     }
-    static Array<T> * make(Int cap)
+    static ArrayList<T> * make(Int cap)
     {
-        Array<T> * result = (Array<T> *)alloc<Array<T> >();
+        ArrayList<T> * result = (ArrayList<T> *)alloc<ArrayList<T> >();
         result->init(cap);
         return result;
     }
-    static void destroy(Array<T> * array)
+    static void destroy(ArrayList<T> * array)
     {
         array->deinit();
         dealloc(array);
@@ -130,7 +223,7 @@ class Array : public StdAlloc {
         }
         _data[_len++] = item;
     }
-    template <int (*cmp)(T, T)>
+    template <typename Cmp>
     void sort()
     {
         T * in = alloc<T>(_len);
@@ -147,7 +240,7 @@ class Array : public StdAlloc {
                 if (lmax > _len)
                     lmax = _len;
                 while (l < lmax && r < rmax) {
-                    int c = cmp(in[l], in[r]);
+                    int c = Cmp::cmp(in[l], in[r]);
                     if (c < 0) {
                         out[p++] = in[l++];
                     }
@@ -181,7 +274,7 @@ static int        height_to_size_init = 0;
 // height_to_size: d -> (1/alpha) ^ d
 static Int height_to_size[MaxTreeDepth];
 
-template <typename T, int (*cmp)(T, T)>
+template <typename T, typename Cmp = T>
 class BalancedTree : public StdAlloc {
     // A scapegoat tree. It is an easy to implement balanced
     // tree, with amortized O(log n) insertion and deletion
@@ -251,7 +344,7 @@ class BalancedTree : public StdAlloc {
     {
         if (node == NULL)
             return NULL;
-        int c = cmp(item, node->item);
+        int c = Cmp::cmp(item, node->item);
         if (c < 0)
             return find_aux(node->left, item);
         else if (c > 0)
@@ -275,7 +368,7 @@ class BalancedTree : public StdAlloc {
             // i.e.: has the tree become unbalanced?
             return height_to_size[d] > _nodes;
         }
-        int c = cmp(item, node->item);
+        int c = Cmp::cmp(item, node->item);
         Int lsize, rsize;
         // insert and calculate sizes of subtrees
         if (c < 0) {
@@ -337,7 +430,7 @@ class BalancedTree : public StdAlloc {
     {
         if (!node)
             return;
-        int c = cmp(item, node->item);
+        int c = Cmp::cmp(item, node->item);
         if (c < 0)
             remove_aux(node->left, item);
         else if (c > 0)
@@ -354,11 +447,11 @@ class BalancedTree : public StdAlloc {
     }
     static BalancedTree * make()
     {
-        BalancedTree<T, cmp> * result = alloc<BalancedTree<T, cmp> >();
+        BalancedTree<T, Cmp> * result = alloc<BalancedTree<T, Cmp> >();
         result->init();
         return result;
     }
-    static void destroy(BalancedTree<T, cmp> * tree)
+    static void destroy(BalancedTree<T, Cmp> * tree)
     {
         tree->deinit();
         dealloc(tree);
@@ -421,44 +514,18 @@ class BalancedTree : public StdAlloc {
     }
 };
 
-
-/****************************************************************************
-**
-**  Various options controlling special features of the Julia GC code follow
-*/
-
-// if SCAN_STACK_FOR_MPTRS_ONLY is defined, stack scanning will only
-// look for references to master pointers, but not bags themselves. This
-// should be safe, as GASMAN uses the same mechanism. It is also faster
-// and avoids certain complicated issues that can lead to crashes, and
-// is therefore the default. The option to scan for all pointers remains
-// available for the time being and should be considered to be
-// deprecated.
-#define SCAN_STACK_FOR_MPTRS_ONLY
-
-// if REQUIRE_PRECISE_MARKING is defined, we assume that all marking
-// functions are precise, i.e., they only invoke MarkBag on valid bags,
-// immediate objects or NULL pointers, but not on any other random data
-// #define REQUIRE_PRECISE_MARKING
-
-// if COLLECT_MARK_CACHE_STATS is defined, we track some statistics about the
-// usage of the MarkCache
-// #define COLLECT_MARK_CACHE_STATS
-
-// if MARKING_STRESS_TEST is defined, we stress test the TryMark code
-// #define MARKING_STRESS_TEST
-
-// if VALIDATE_MARKING is defined, the program is aborted if we ever
-// encounter a reference during marking that does not meet additional
-// validation criteria. These tests are compararively expensive and
-// should not be enabled by default.
-// #define VALIDATE_MARKING
+struct CmpAddr {
+    static int cmp(void *a, void *b) {
+        return cmp_ptr(a, b);
+    }
+};
 
 
-/****************************************************************************
-**
-**
-*/
+} // namespace JuliaGC
+
+using namespace JuliaGC;
+
+
 
 #ifndef REQUIRE_PRECISE_MARKING
 
@@ -525,59 +592,6 @@ static void JFinalizer(jl_value_t * obj)
         TabFreeFuncBags[tnum]((Bag)&contents);
 }
 
-// Comparing pointers in C without triggering undefined behavior
-// can be difficult. As the GC already assumes that the memory
-// range goes from 0 to 2^k-1 (region tables), we simply convert
-// to uintptr_t and compare those.
-
-int cmp_ptr(void * p, void * q)
-{
-    uintptr_t paddr = (uintptr_t)p;
-    uintptr_t qaddr = (uintptr_t)q;
-    if (paddr < qaddr)
-        return -1;
-    else if (paddr > qaddr)
-        return 1;
-    else
-        return 0;
-}
-
-static inline int lt_ptr(void * a, void * b)
-{
-    return (uintptr_t)a < (uintptr_t)b;
-}
-
-#if 0
-static inline int gt_ptr(void * a, void * b)
-{
-    return (uintptr_t)a > (uintptr_t)b;
-}
-
-static inline void *max_ptr(void *a, void *b)
-{
-    if ((uintptr_t) a > (uintptr_t) b)
-        return a;
-    else
-        return b;
-}
-
-static inline void *min_ptr(void *a, void *b)
-{
-    if ((uintptr_t) a < (uintptr_t) b)
-        return a;
-    else
-        return b;
-}
-#endif
-
-/* align pointer to full word if mis-aligned */
-static inline void * align_ptr(void * p)
-{
-    uintptr_t u = (uintptr_t)p;
-    u &= ~(sizeof(p) - 1);
-    return (void *)u;
-}
-
 static jl_module_t *   Module;
 static jl_datatype_t * datatype_mptr;
 static jl_datatype_t * datatype_bag;
@@ -593,23 +607,22 @@ static int             FullGC;
 struct MemBlock {
     void * addr;
     size_t size;
+    static int cmp(MemBlock m1, MemBlock m2)
+    {
+        char * l1 = (char *)m1.addr;
+        char * r1 = l1 + m1.size;
+        char * l2 = (char *)m2.addr;
+        char * r2 = l2 + m2.size;
+        if (lt_ptr(r1, l1))
+            return -1;
+        if (!lt_ptr(l2, r2))
+            return 1;
+        return 0;
+    }
 };
 
-int CmpMemBlock(MemBlock m1, MemBlock m2)
-{
-    char * l1 = (char *)m1.addr;
-    char * r1 = l1 + m1.size;
-    char * l2 = (char *)m2.addr;
-    char * r2 = l2 + m2.size;
-    if (lt_ptr(r1, l1))
-        return -1;
-    if (!lt_ptr(l2, r2))
-        return 1;
-    return 0;
-}
-
-static size_t                                bigval_startoffset;
-static BalancedTree<MemBlock, CmpMemBlock> * bigvals;
+static size_t                   bigval_startoffset;
+static BalancedTree<MemBlock> * bigvals;
 
 void alloc_bigval(void * addr, size_t size)
 {
@@ -796,7 +809,7 @@ static void TryMark(void * p)
 }
 
 static void
-FindLiveRangeReverse(Array<void *> * arr, void * start, void * end)
+FindLiveRangeReverse(ArrayList<void *> * arr, void * start, void * end)
 {
     if (lt_ptr(end, start)) {
         SWAP(void *, start, end);
@@ -813,41 +826,40 @@ FindLiveRangeReverse(Array<void *> * arr, void * start, void * end)
     }
 }
 
-typedef struct {
+struct TaskInfo {
     jl_task_t *     task;
-    Array<void *> * stack;
-} TaskInfo;
+    ArrayList<void *> * stack;
+    static int cmp(TaskInfo i1, TaskInfo i2)
+    {
+        return cmp_ptr(i1.task, i2.task);
+    }
+};
 
-int CmpTaskInfo(TaskInfo i1, TaskInfo i2)
-{
-    return cmp_ptr(i1.task, i2.task);
-}
-
-static void MarkFromList(Array<void *> * arr)
+static void MarkFromList(ArrayList<void *> * arr)
 {
     for (Int i = 0; i < arr->len(); i++) {
         JMark(arr->at(i));
     }
 }
 
-static BalancedTree<TaskInfo, CmpTaskInfo> * task_stacks;
+static BalancedTree<TaskInfo> * task_stacks;
 
 static void
 ScanTaskStack(int rescan, jl_task_t * task, void * start, void * end)
 {
     if (!task_stacks) {
-        task_stacks = BalancedTree<TaskInfo, CmpTaskInfo>::make();
+        task_stacks = BalancedTree<TaskInfo>::make();
     }
     TaskInfo        tmp = { task, NULL };
     TaskInfo *      taskinfo = task_stacks->find(tmp);
-    Array<void *> * stack;
+    ArrayList<void *> * stack;
     if (taskinfo != NULL) {
         stack = taskinfo->stack;
         if (rescan)
             stack->set_len(0);
     }
     else {
-        tmp.stack = Array<void *>::make(1024);
+        tmp.stack = ArrayList<void *>::make(1024);
         stack = tmp.stack;
         task_stacks->insert(tmp);
     }
@@ -871,7 +883,7 @@ ScanTaskStack(int rescan, jl_task_t * task, void * start, void * end)
     if (rescan) {
         // Remove duplicates
         if (stack->len() > 0) {
-            stack->sort<cmp_ptr>();
+            stack->sort<CmpAddr>();
             Int p = 0;
             for (Int i = 1; i < stack->len(); i++) {
                 if (stack->at(i) != stack->at(p)) {
@@ -1089,7 +1101,7 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     // These callbacks need to be set before initialization so
     // that we can track objects allocated during `jl_init()`.
 #if !defined(SCAN_STACK_FOR_MPTRS_ONLY)
-    bigvals = BalancedTree<MemBlock, CmpMemBlock>::make();
+    bigvals = BalancedTree<MemBlock>::make();
     jl_gc_set_cb_notify_external_alloc(alloc_bigval, 1);
     jl_gc_set_cb_notify_external_free(free_bigval, 1);
     bigval_startoffset = jl_gc_external_obj_hdr_size();
@@ -1373,15 +1385,17 @@ void MarkJuliaWeakRef(void * p)
 
 #ifdef TEST_JULIA_GC_INTERNALS
 
-int int_cmp(int a, int b)
-{
-    return a - b;
-}
+struct IntCmp {
+    static int cmp(int a, int b)
+    {
+        return a - b;
+    }
+};
 
 __attribute__((constructor)) void TestScapegoatTree()
 {
     const Int                    N = 1024 * 1024;
-    BalancedTree<int, int_cmp> * btree = BalancedTree<int, int_cmp>::make();
+    BalancedTree<int, IntCmp> * btree = BalancedTree<int, IntCmp>::make();
     btree->init();
     for (int i = 0; i < N; i++) {
         btree->insert(i);
@@ -1419,7 +1433,7 @@ __attribute__((constructor)) void TestScapegoatTree()
     if (btree->count() != 0 || btree->depth() != 0)
         abort();
     btree->remove(0);
-    BalancedTree<int, int_cmp>::destroy(btree);
+    BalancedTree<int, IntCmp>::destroy(btree);
     printf("Scapegoat tree passed tests.\n");
     exit(0);
 }

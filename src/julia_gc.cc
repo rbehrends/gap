@@ -14,6 +14,7 @@
 **  and gasman.c for two other garbage collector implementations.
 **/
 
+extern "C" {
 #include "julia_gc.h"
 
 #include "fibhash.h"
@@ -33,6 +34,392 @@
 
 #include <julia.h>
 #include <julia_gcext.h>
+}    // extern "C"
+
+// So that we don't have to link against the standard C++ library, we do
+// manual allocation via alloc() and dealloc() routines that have their own
+// error handling. Allocate instances of Array and BalancedTree via
+// Array<T>::make(...) and BalancedTree<T, f>::make(...).
+//
+// Likewise, ...::destroy(...) can be used to deallocate the data structures
+// and their contents. If placed in manually allocated memory, call init()
+// and deinit() to initialize and deinitialize them.
+
+class StdAlloc {
+  protected:
+    template <typename T>
+    static T * alloc(size_t n)
+    {
+        T * result = (T *)malloc(n * sizeof(T));
+        if (!result)
+            abort();
+        return result;
+    }
+    template <typename T>
+    static T * alloc()
+    {
+        return alloc<T>(1);
+    }
+    template <typename T>
+    static void dealloc(T * p)
+    {
+        free(p);
+    }
+};
+
+template <typename T>
+class Array : public StdAlloc {
+  private:
+    Int _len, _cap;
+    T * _data;
+
+  public:
+    Int len()
+    {
+        return _len;
+    }
+    void set_len(Int len)
+    {
+        _len = len;
+    }
+    T & at(Int i)
+    {
+        return _data[i];
+    }
+    Array(Int cap)
+    {
+        init(cap);
+    }
+    ~Array()
+    {
+        deinit();
+    }
+    void init(Int cap)
+    {
+        _len = 0;
+        _cap = cap;
+        _data = alloc<T>(cap);
+    }
+    static Array<T> * make(Int cap)
+    {
+        Array<T> * result = (Array<T> *)alloc<Array<T> >();
+        result->init(cap);
+        return result;
+    }
+    static void destroy(Array<T> * array)
+    {
+        array->deinit();
+        dealloc(array);
+    }
+    void deinit()
+    {
+        dealloc(_data);
+        _len = _cap = 0;
+        _data = NULL;
+    }
+    void add(T item)
+    {
+        if (_len == _cap) {
+            Int newcap = _cap ? _cap * 2 : 1;
+            T * data = alloc<T>(newcap);
+            if (_data)
+                memcpy(data, _data, newcap * sizeof(T));
+            dealloc(_data);
+            _data = data;
+            _cap = newcap;
+        }
+        _data[_len++] = item;
+    }
+    template <int (*cmp)(T, T)>
+    void sort()
+    {
+        T * in = alloc<T>(_len);
+        T * out = alloc<T>(_len);
+        if (_data)
+            memcpy(in, _data, sizeof(T) * _len);
+        Int step = 1;
+        while (step < _len) {
+            for (Int i = 0; i < _len; i += step * 2) {
+                Int p = i, l = i, r = i + step, lmax = l + step,
+                    rmax = r + step;
+                if (rmax > _len)
+                    rmax = _len;
+                if (lmax > _len)
+                    lmax = _len;
+                while (l < lmax && r < rmax) {
+                    int c = cmp(in[l], in[r]);
+                    if (c < 0) {
+                        out[p++] = in[l++];
+                    }
+                    else {
+                        out[p++] = in[r++];
+                    }
+                }
+                while (l < lmax) {
+                    out[p++] = in[l++];
+                }
+                while (r < rmax) {
+                    out[p++] = in[r++];
+                }
+            }
+            T * tmp = in;
+            in = out;
+            out = tmp;
+            step += step;
+        }
+        dealloc(_data);
+        dealloc(out);
+        _data = in;
+        _cap = _len;    // we allocated only _len items for 'in'.
+    }
+};
+
+// conservative estimate: 2 * log(max(UInt)+1) for alpha ~= 1.0
+static const UInt MaxTreeDepth = 2 * (sizeof(UInt) * 8);
+static int        height_to_size_init = 0;
+// For scapegoat trees with balance factor alpha:
+// height_to_size: d -> (1/alpha) ^ d
+static Int height_to_size[MaxTreeDepth];
+
+template <typename T, int (*cmp)(T, T)>
+class BalancedTree : public StdAlloc {
+    // A scapegoat tree. It is an easy to implement balanced
+    // tree, with amortized O(log n) insertion and deletion
+    // cost and no memory overhead compared to other balanced
+    // tree implementations.
+  private:
+    // alpha = alpha_lo / alpha_hi
+    static const Int alpha_hi = 3;
+    static const Int alpha_lo = 2;
+    struct Node {
+        Node * left;
+        Node * right;
+        T      item;
+    };
+    Int    _nodes, _maxnodes;
+    Node * _root;
+    void   delete_nodes(Node * node)
+    {
+        if (node != NULL) {
+            delete_nodes(node->left);
+            delete_nodes(node->right);
+            dealloc(node);
+        }
+    }
+    static Int count(Node * node)
+    {
+        return node == NULL ? 0 : 1 + count(node->left) + count(node->right);
+    }
+    // Linearize subtree starting at node
+    Node ** linearize(Node ** buf, Node * node)
+    {
+        if (node->left)
+            buf = linearize(buf, node->left);
+        *buf++ = node;
+        if (node->right)
+            buf = linearize(buf, node->right);
+        return buf;
+    }
+    // Turn node list into nearly complete binary tree
+    Node * treeify(Node ** buf, Int size)
+    {
+        switch (size) {
+        case 0:
+            return NULL;
+        case 1:
+            buf[0]->left = NULL;
+            buf[0]->right = NULL;
+            return buf[0];
+        default:
+            Int mid = size >> 1;
+            buf[mid]->left = treeify(buf, mid);
+            buf[mid]->right = treeify(buf + mid + 1, size - mid - 1);
+            return buf[mid];
+        }
+    }
+    void rebalance(Node *& node, Int size)
+    {
+        const Int N = 1024;
+        Node *    local[N];
+        Node **   buf = size <= N ? local : alloc<Node *>(size);
+        linearize(buf, node);
+        node = treeify(buf, size);
+        if (buf != local)
+            dealloc(buf);
+    }
+    T * find_aux(Node * node, T & item)
+    {
+        if (node == NULL)
+            return NULL;
+        int c = cmp(item, node->item);
+        if (c < 0)
+            return find_aux(node->left, item);
+        else if (c > 0)
+            return find_aux(node->right, item);
+        else
+            return &node->item;
+    }
+    // return 0 if we already have rebalanced the tree
+    // return size of subtree starting at node otherwise
+    Int insert_aux(Node *& node, T & item, int d)
+    {
+        if (node == NULL) {
+            // actual insertion
+            node = alloc<Node>();
+            node->left = NULL;
+            node->right = NULL;
+            node->item = item;
+            _nodes++;
+            // calculate: (1/alpha) ^ d > _nodes
+            // equivalent to: d > log(_nodes, 1/alpha)
+            // i.e.: has the tree become unbalanced?
+            return height_to_size[d] > _nodes;
+        }
+        int c = cmp(item, node->item);
+        Int lsize, rsize;
+        // insert and calculate sizes of subtrees
+        if (c < 0) {
+            lsize = insert_aux(node->left, item, d + 1);
+            if (lsize == 0)
+                return 0;
+            rsize = count(node->right);
+        }
+        else if (c > 0) {
+            rsize = insert_aux(node->right, item, d + 1);
+            if (rsize == 0)
+                return 0;
+            lsize = count(node->left);
+        }
+        else {
+            node->item = item;
+            return 0;
+        }
+        Int size = lsize + rsize + 1;
+        // lsize <= alpha * size && rsize <= alpha * size
+        if (alpha_hi * lsize <= alpha_lo * size &&
+            alpha_hi * rsize <= alpha_lo * size) {
+            // try further up if not unbalanced
+            return size;
+        }
+        // rebalance node
+        rebalance(node, size);
+        return 0;
+    }
+    void remove_node(Node *& node)
+    {
+        Node * del = node;
+        if (node->left != NULL) {
+            if (node->right != NULL) {
+                // copy from & delete in order successor
+                Node ** succ = &node->right;
+                while ((*succ)->left != NULL)
+                    succ = &(*succ)->left;
+                node->item = (*succ)->item;
+                remove_node(*succ);
+                return;
+            }
+            else {
+                node = node->left;
+            }
+        }
+        else {
+            node = node->right;
+        }
+        dealloc(del);
+        _nodes--;
+        if (alpha_hi * _nodes <= alpha_lo * _maxnodes) {
+            if (_root)
+                rebalance(_root, _nodes);
+            _maxnodes = _nodes;
+        }
+    }
+    void remove_aux(Node *& node, T & item)
+    {
+        if (!node)
+            return;
+        int c = cmp(item, node->item);
+        if (c < 0)
+            remove_aux(node->left, item);
+        else if (c > 0)
+            remove_aux(node->right, item);
+        else {
+            remove_node(node);
+        }
+    }
+
+  public:
+    BalancedTree()
+    {
+        init();
+    }
+    static BalancedTree * make()
+    {
+        BalancedTree<T, cmp> * result = alloc<BalancedTree<T, cmp> >();
+        result->init();
+        return result;
+    }
+    static void destroy(BalancedTree<T, cmp> * tree)
+    {
+        tree->deinit();
+        dealloc(tree);
+    }
+    ~BalancedTree()
+    {
+        remove_all();
+    }
+    void init()
+    {
+        _nodes = _maxnodes = 0;
+        _root = NULL;
+        if (!height_to_size_init) {
+            height_to_size_init = 1;
+            double w = 1.0;
+            for (int d = 0; d < MaxTreeDepth; d++) {
+                w *= (double)alpha_hi;
+                w /= (double)alpha_lo;
+                height_to_size[d] = (Int)w;
+            }
+        }
+    }
+    void deinit()
+    {
+        remove_all();
+    }
+    void remove_all()
+    {
+        delete_nodes(_root);
+    }
+    void insert(T item)
+    {
+        insert_aux(_root, item, 0);
+        if (_nodes > _maxnodes)
+            _maxnodes = _nodes;
+    }
+    T * find(T item)
+    {
+        return find_aux(_root, item);
+    }
+    void remove(T item)
+    {
+        remove_aux(_root, item);
+    }
+    Int depth_aux(Node * node)
+    {
+        if (node == NULL)
+            return 0;
+        Int m1 = depth_aux(node->left);
+        Int m2 = depth_aux(node->right);
+        return (m1 < m2 ? m2 : m1) + 1;
+    }
+    Int depth()
+    {
+        return depth_aux(_root);
+    }
+    Int count()
+    {
+        return _nodes;
+    }
+};
 
 
 /****************************************************************************
@@ -138,30 +525,12 @@ static void JFinalizer(jl_value_t * obj)
         TabFreeFuncBags[tnum]((Bag)&contents);
 }
 
-#if !defined(SCAN_STACK_FOR_MPTRS_ONLY)
-
-/****************************************************************************
-**
-**  Treap functionality
-**
-**  Treaps are probabilistically balanced binary trees. We use them for
-**  range queries on pointers for conservative scans. Unlike red-black
-**  trees, they're simple to implement, and unlike AVL trees, insertions
-**  take an expected O(1) number of mutations to the tree, making them
-**  more cache-friendly for an insertion-heavy workload.
-**
-**  Their downside is that they are probabilistic and that hypothetically,
-**  degenerate cases can occur. However, these are very unlikely, and if
-**  that turns out to be a problem, we can replace them with alternate
-**  balanced trees (B-trees being a likely suitable candidate).
-*/
-
 // Comparing pointers in C without triggering undefined behavior
 // can be difficult. As the GC already assumes that the memory
 // range goes from 0 to 2^k-1 (region tables), we simply convert
 // to uintptr_t and compare those.
 
-static inline int cmp_ptr(void * p, void * q)
+int cmp_ptr(void * p, void * q)
 {
     uintptr_t paddr = (uintptr_t)p;
     uintptr_t qaddr = (uintptr_t)q;
@@ -172,7 +541,6 @@ static inline int cmp_ptr(void * p, void * q)
     else
         return 0;
 }
-#endif
 
 static inline int lt_ptr(void * a, void * b)
 {
@@ -210,205 +578,6 @@ static inline void * align_ptr(void * p)
     return (void *)u;
 }
 
-#if !defined(SCAN_STACK_FOR_MPTRS_ONLY)
-
-typedef struct treap_t {
-    struct treap_t *left, *right;
-    size_t          prio;
-    void *          addr;
-    size_t          size;
-} treap_t;
-
-static treap_t * treap_free_list;
-
-treap_t * alloc_treap(void)
-{
-    treap_t * result;
-    if (treap_free_list) {
-        result = treap_free_list;
-        treap_free_list = treap_free_list->right;
-    }
-    else
-        result = malloc(sizeof(treap_t));
-    result->left = NULL;
-    result->right = NULL;
-    result->addr = NULL;
-    result->size = 0;
-    return result;
-}
-
-static void free_treap(treap_t * t)
-{
-    t->right = treap_free_list;
-    treap_free_list = t;
-}
-
-static inline int test_bigval_range(treap_t * node, void * p)
-{
-    char * l = node->addr;
-    char * r = l + node->size;
-    if (lt_ptr(p, l))
-        return -1;
-    if (!lt_ptr(p, r))
-        return 1;
-    return 0;
-}
-
-
-#define L(t) ((t)->left)
-#define R(t) ((t)->right)
-
-static inline void treap_rot_right(treap_t ** treap)
-{
-    /*       t                 l       */
-    /*     /   \             /   \     */
-    /*    l     r    -->    a     t    */
-    /*   / \                     / \   */
-    /*  a   b                   b   r  */
-    treap_t * t = *treap;
-    treap_t * l = L(t);
-    treap_t * a = L(l);
-    treap_t * b = R(l);
-    L(l) = a;
-    R(l) = t;
-    L(t) = b;
-    *treap = l;
-}
-
-static inline void treap_rot_left(treap_t ** treap)
-{
-    /*     t                   r       */
-    /*   /   \               /   \     */
-    /*  l     r    -->      t     b    */
-    /*       / \           / \         */
-    /*      a   b         l   a        */
-    treap_t * t = *treap;
-    treap_t * r = R(t);
-    treap_t * a = L(r);
-    treap_t * b = R(r);
-    L(r) = t;
-    R(r) = b;
-    R(t) = a;
-    *treap = r;
-}
-
-static void * treap_find(treap_t * treap, void * p)
-{
-    while (treap) {
-        int c = test_bigval_range(treap, p);
-        if (c == 0)
-            return treap->addr;
-        else if (c < 0)
-            treap = L(treap);
-        else
-            treap = R(treap);
-    }
-    return NULL;
-}
-
-static void treap_insert(treap_t ** treap, treap_t * val)
-{
-    treap_t * t = *treap;
-    if (t == NULL) {
-        L(val) = NULL;
-        R(val) = NULL;
-        *treap = val;
-    }
-    else {
-        int c = cmp_ptr(val->addr, t->addr);
-        if (c < 0) {
-            treap_insert(&L(t), val);
-            if (L(t)->prio > t->prio) {
-                treap_rot_right(treap);
-            }
-        }
-        else if (c > 0) {
-            treap_insert(&R(t), val);
-            if (R(t)->prio > t->prio) {
-                treap_rot_left(treap);
-            }
-        }
-    }
-}
-
-static void treap_delete_node(treap_t ** treap)
-{
-    for (;;) {
-        treap_t * t = *treap;
-        if (L(t) == NULL) {
-            *treap = R(t);
-            free_treap(t);
-            break;
-        }
-        else if (R(t) == NULL) {
-            *treap = L(t);
-            free_treap(t);
-            break;
-        }
-        else {
-            if (L(t)->prio > R(t)->prio) {
-                treap_rot_right(treap);
-                treap = &R(*treap);
-            }
-            else {
-                treap_rot_left(treap);
-                treap = &L(*treap);
-            }
-        }
-    }
-}
-
-static int treap_delete(treap_t ** treap, void * addr)
-{
-    while (*treap != NULL) {
-        int c = cmp_ptr(addr, (*treap)->addr);
-        if (c == 0) {
-            treap_delete_node(treap);
-            return 1;
-        }
-        else if (c < 0) {
-            treap = &L(*treap);
-        }
-        else {
-            treap = &R(*treap);
-        }
-    }
-    return 0;
-}
-
-static uint64_t xorshift_rng_state = 1;
-
-static uint64_t xorshift_rng(void)
-{
-    uint64_t x = xorshift_rng_state;
-    x = x ^ (x >> 12);
-    x = x ^ (x << 25);
-    x = x ^ (x >> 27);
-    xorshift_rng_state = x;
-    return x * (uint64_t)0x2545F4914F6CDD1DUL;
-}
-
-
-static treap_t * bigvals;
-
-static void alloc_bigval(void * addr, size_t size)
-{
-    treap_t * node = alloc_treap();
-    node->addr = addr;
-    node->size = size;
-    node->prio = xorshift_rng();
-    treap_insert(&bigvals, node);
-}
-
-static void free_bigval(void * p)
-{
-    if (p) {
-        treap_delete(&bigvals, p);
-    }
-}
-
-#endif
-
 static jl_module_t *   Module;
 static jl_datatype_t * datatype_mptr;
 static jl_datatype_t * datatype_bag;
@@ -418,8 +587,41 @@ static Bag *           GapStackBottom;
 static jl_ptls_t       JuliaTLS, SaveTLS;
 static size_t          max_pool_obj_size;
 static UInt            YoungRef;
+static int             FullGC;
+
 #if !defined(SCAN_STACK_FOR_MPTRS_ONLY)
-static size_t bigval_startoffset;
+struct MemBlock {
+    void * addr;
+    size_t size;
+};
+
+int CmpMemBlock(MemBlock m1, MemBlock m2)
+{
+    char * l1 = (char *)m1.addr;
+    char * r1 = l1 + m1.size;
+    char * l2 = (char *)m2.addr;
+    char * r2 = l2 + m2.size;
+    if (lt_ptr(r1, l1))
+        return -1;
+    if (!lt_ptr(l2, r2))
+        return 1;
+    return 0;
+}
+
+static size_t                                bigval_startoffset;
+static BalancedTree<MemBlock, CmpMemBlock> * bigvals;
+
+void alloc_bigval(void * addr, size_t size)
+{
+    MemBlock mem = { addr, size };
+    bigvals->insert(mem);
+}
+
+void free_bigval(void * addr)
+{
+    MemBlock mem = { addr, 0 };
+    bigvals->remove(mem);
+}
 #endif
 
 
@@ -552,8 +754,10 @@ static void TryMark(void * p)
         // the object, so we subtract one word from the
         // address. This is safe, as the object is preceded
         // by a larger header.
-        p2 = treap_find(bigvals, (char *)p - 1);
-        if (p2) {
+        MemBlock   tmp = { (char *)p - 1, 0 };
+        MemBlock * found = bigvals->find(tmp);
+        if (found) {
+            p2 = (jl_value_t *)found->addr;
             // It is possible for types to not be valid objects.
             // Objects with such types are not normally made visible
             // to the mark loop, so we need to avoid marking them
@@ -591,7 +795,8 @@ static void TryMark(void * p)
     }
 }
 
-static void TryMarkRangeReverse(void * start, void * end)
+static void
+FindLiveRangeReverse(Array<void *> * arr, void * start, void * end)
 {
     if (lt_ptr(end, start)) {
         SWAP(void *, start, end);
@@ -600,17 +805,84 @@ static void TryMarkRangeReverse(void * start, void * end)
     char * q = (char *)end - sizeof(void *);
     while (!lt_ptr(q, p)) {
         void * addr = *(void **)q;
-        if (addr) {
-            TryMark(addr);
-#ifdef MARKING_STRESS_TEST
-            for (int j = 0; j < 1000; ++j) {
-                UInt val = (UInt)addr + rand() - rand();
-                TryMark((void *)val);
-            }
-#endif
+        if (addr && jl_gc_internal_obj_base_ptr(addr) == addr &&
+            jl_typeis(addr, datatype_mptr)) {
+            arr->add(addr);
         }
         q -= StackAlignBags;
     }
+}
+
+typedef struct {
+    jl_task_t *     task;
+    Array<void *> * stack;
+} TaskInfo;
+
+int CmpTaskInfo(TaskInfo i1, TaskInfo i2)
+{
+    return cmp_ptr(i1.task, i2.task);
+}
+
+static void MarkFromList(Array<void *> * arr)
+{
+    for (Int i = 0; i < arr->len(); i++) {
+        JMark(arr->at(i));
+    }
+}
+
+static BalancedTree<TaskInfo, CmpTaskInfo> * task_stacks;
+
+static void
+ScanTaskStack(int rescan, jl_task_t * task, void * start, void * end)
+{
+    if (!task_stacks) {
+        task_stacks = BalancedTree<TaskInfo, CmpTaskInfo>::make();
+    }
+    TaskInfo        tmp = { task, NULL };
+    TaskInfo *      taskinfo = task_stacks->find(tmp);
+    Array<void *> * stack;
+    if (taskinfo != NULL) {
+        stack = taskinfo->stack;
+        if (rescan)
+            stack->set_len(0);
+    }
+    else {
+        tmp.stack = Array<void *>::make(1024);
+        stack = tmp.stack;
+        task_stacks->insert(tmp);
+    }
+    volatile jl_jmp_buf * old_safe_restore =
+        (volatile jl_jmp_buf *)JuliaTLS->safe_restore;
+    jl_jmp_buf exc_buf;
+    if (!jl_setjmp(exc_buf, 0)) {
+        // The bottom of the stack may be protected with
+        // guard pages; accessing these results in segmentation
+        // faults. Julia catches those segmentation faults and
+        // longjmps to JuliaTLS->safe_restore; we use this
+        // mechamism to abort stack scanning when a protected
+        // page is hit. For this to work, we must scan the stack
+        // from top to bottom, so we see any guard pages last.
+        JuliaTLS->safe_restore = &exc_buf;
+        if (rescan) {
+            FindLiveRangeReverse(stack, start, end);
+        }
+    }
+    JuliaTLS->safe_restore = (jl_jmp_buf *)old_safe_restore;
+    if (rescan) {
+        // Remove duplicates
+        if (stack->len() > 0) {
+            stack->sort<cmp_ptr>();
+            Int p = 0;
+            for (Int i = 1; i < stack->len(); i++) {
+                if (stack->at(i) != stack->at(p)) {
+                    p++;
+                    stack->at(p) = stack->at(i);
+                }
+            }
+            stack->set_len(p + 1);
+        }
+    }
+    MarkFromList(stack);
 }
 
 static void TryMarkRange(void * start, void * end)
@@ -672,7 +944,8 @@ static void GapRootScanner(int full)
     // The reason is that if Julia is being initialized from GAP, it
     // cannot always reliably find the top of the stack for that task,
     // so we have to fall back to GAP for that.
-    if (!IsUsingLibGap() && JuliaTLS->tid == 0 && JuliaTLS->root_task == task) {
+    if (!IsUsingLibGap() && JuliaTLS->tid == 0 &&
+        JuliaTLS->root_task == task) {
         stackend = (char *)GapStackBottom;
     }
 
@@ -703,6 +976,25 @@ static void GapTaskScanner(jl_task_t * task, int root_task)
     size_t size;
     int    tid;
     char * stack = (char *)jl_task_stack_buffer(task, &size, &tid);
+    // If it is the current task, it has been scanned by GapRootScanner()
+    // already.
+    if (task == JuliaTLS->current_task)
+        return;
+    int rescan = 1;
+    if (!FullGC) {
+        // This is a temp hack to work around a problem with the
+        // generational GC. Basically, task stacks are being scanned
+        // regardless of whether they are old or new. In order to avoid
+        // that, we're manually checking whether the old flag is set for
+        // a task.
+        //
+        // This works specifically for task stacks as the current task
+        // is being scanned regardless and a write barrier will flip
+        // the age bit back to new if tasks are being switched.
+        jl_taggedvalue_t * tag = jl_astaggedvalue(task);
+        if (tag->bits.gc & 2)
+            rescan = 0;
+    }
     if (stack && tid < 0) {
         if (task->copy_stack) {
             // We know which part of the task stack is actually used,
@@ -710,21 +1002,7 @@ static void GapTaskScanner(jl_task_t * task, int root_task)
             stack = stack + size - task->copy_stack;
             size = task->copy_stack;
         }
-        volatile jl_jmp_buf * old_safe_restore =
-            (volatile jl_jmp_buf *)JuliaTLS->safe_restore;
-        jl_jmp_buf exc_buf;
-        if (!jl_setjmp(exc_buf, 0)) {
-            // The bottom of the stack may be protected with
-            // guard pages; accessing these results in segmentation
-            // faults. Julia catches those segmentation faults and
-            // longjmps to JuliaTLS->safe_restore; we use this
-            // mechamism to abort stack scanning when a protected
-            // page is hit. For this to work, we must scan the stack
-            // from top to bottom, so we see any guard pages last.
-            JuliaTLS->safe_restore = &exc_buf;
-            TryMarkRangeReverse(stack, stack + size);
-        }
-        JuliaTLS->safe_restore = (jl_jmp_buf *)old_safe_restore;
+        ScanTaskStack(rescan, task, stack, stack + size);
     }
 }
 
@@ -735,6 +1013,7 @@ static void PreGCHook(int full)
     // GAP. So we save the TLS pointer temporarily and restore it
     // afterwards. In the long run, JuliaTLS needs to simply become
     // a thread-local variable.
+    FullGC = full;
     SaveTLS = JuliaTLS;
     JuliaTLS = jl_get_ptls_states();
     // This is the same code as in VarsBeforeCollectBags() for GASMAN.
@@ -810,6 +1089,7 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     // These callbacks need to be set before initialization so
     // that we can track objects allocated during `jl_init()`.
 #if !defined(SCAN_STACK_FOR_MPTRS_ONLY)
+    bigvals = BalancedTree<MemBlock, CmpMemBlock>::make();
     jl_gc_set_cb_notify_external_alloc(alloc_bigval, 1);
     jl_gc_set_cb_notify_external_free(free_bigval, 1);
     bigval_startoffset = jl_gc_external_obj_hdr_size();
@@ -946,11 +1226,11 @@ Bag NewBag(UInt type, UInt size)
         alloc_size++;
 
 #if defined(SCAN_STACK_FOR_MPTRS_ONLY)
-    bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
+    bag = (Bag)jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, 0);
 #endif
 
-    BagHeader * header = AllocateBagMemory(type, alloc_size);
+    BagHeader * header = (BagHeader *)AllocateBagMemory(type, alloc_size);
 
     header->type = type;
     header->flags = 0;
@@ -959,7 +1239,7 @@ Bag NewBag(UInt type, UInt size)
 
 #if !defined(SCAN_STACK_FOR_MPTRS_ONLY)
     // allocate the new masterpointer
-    bag = jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
+    bag = (Bag)jl_gc_alloc_typed(JuliaTLS, sizeof(void *), datatype_mptr);
     SET_PTR_BAG(bag, DATA(header));
 #else
     // change the masterpointer to reference the new bag memory
@@ -991,7 +1271,7 @@ UInt ResizeBag(Bag bag, UInt new_size)
             alloc_size++;
 
         // allocate new bag
-        header = AllocateBagMemory(header->type, alloc_size);
+        header = (BagHeader *)AllocateBagMemory(header->type, alloc_size);
 
         // copy bag header and data, and update size
         memcpy(header, BAG_HEADER(bag), sizeof(BagHeader) + old_size);
@@ -1030,7 +1310,7 @@ void SwapMasterPoint(Bag bag1, Bag bag2)
 
 // HOOK: mark functions
 
-inline void MarkBag(Bag bag)
+void MarkBag(Bag bag)
 {
     if (!IS_BAG_REF(bag))
         return;
@@ -1089,3 +1369,59 @@ void MarkJuliaWeakRef(void * p)
     if (JMarkTyped(p, jl_weakref_type))
         YoungRef++;
 }
+
+
+#ifdef TEST_JULIA_GC_INTERNALS
+
+int int_cmp(int a, int b)
+{
+    return a - b;
+}
+
+__attribute__((constructor)) void TestScapegoatTree()
+{
+    const Int                    N = 1024 * 1024;
+    BalancedTree<int, int_cmp> * btree = BalancedTree<int, int_cmp>::make();
+    btree->init();
+    for (int i = 0; i < N; i++) {
+        btree->insert(i);
+    }
+    if (btree->count() != N)
+        abort();
+    if (height_to_size[btree->depth() - 1] > btree->count())
+        abort();
+    for (int i = 0; i < N; i++) {
+        if (!btree->find(i))
+            abort();
+    }
+    for (int i = 1; i < N; i++) {
+        btree->remove(i);
+    }
+    if (btree->count() != 1 || btree->depth() != 1)
+        abort();
+    btree->remove(0);
+    for (int i = 0, j = 0; i < N; i++, j = (5 * j + 1) & (N - 1)) {
+        btree->insert(j);
+    }
+    if (btree->count() != N)
+        abort();
+    if (height_to_size[btree->depth() - 1] > btree->count())
+        abort();
+    for (int i = 0; i < N; i++) {
+        if (!btree->find(i))
+            abort();
+    }
+    for (int i = 0, j = 0; i < N; i++, j = (j + 7) & (N - 1)) {
+        if (i == N / 2 && btree->count() != N / 2)
+            abort();
+        btree->remove(j);
+    }
+    if (btree->count() != 0 || btree->depth() != 0)
+        abort();
+    btree->remove(0);
+    BalancedTree<int, int_cmp>::destroy(btree);
+    printf("Scapegoat tree passed tests.\n");
+    exit(0);
+}
+
+#endif

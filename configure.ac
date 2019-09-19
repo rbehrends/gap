@@ -203,6 +203,93 @@ AS_CASE([$with_gc],
 AC_MSG_RESULT([$with_gc])
 
 dnl
+dnl User setting: native thread-local storage (off by default)
+dnl
+
+AC_ARG_WITH([native-tls],
+    [AS_HELP_STRING([--with-native-tls],
+        [use native thread-local storage implementation])],
+        [],
+        [with_native_tls=no])
+AC_MSG_CHECKING([whether to use native tls])
+dnl
+dnl Distinguish between cases where we support __thread declarations
+dnl and situations where we use a pthread_getspecific() implementation.
+dnl Right now, we only do the latter for 64-bit macOS.
+dnl
+AS_IF([[test "x$with_native_tls" == "xyes"]], [
+        case "$host_cpu-$host_vendor-$host_os" in
+            x86_64-apple-darwin*)
+                AC_DEFINE([USE_PTHREAD_TLS], [1], [define as 1 if using pthread_getspecific])
+                dnl
+                dnl Test if we can optimize pthread_getspecific() calls via
+                dnl inline assembly on macOS.
+                dnl
+                AC_RUN_IFELSE(
+                    [AC_LANG_PROGRAM([[
+#include <pthread.h>
+#include <string.h>
+]],[[
+    /* This is an idea borrowed from Mono. We test if the implementation
+     * of pthread_getspecific() uses the assembly code below. If that is
+     * true, we can replace calls to pthread_getspecific() with the
+     * matching inline assembly, allowing a significant performance boost.
+     */
+#if defined(__APPLE__) && defined(__x86_64__)
+    static char asm_code[] = {
+        // movq %gs:(,%rdi,8), %rax
+        // retq
+        0x65, 0x48, 0x8b, 0x04, 0xfd, 0x00, 0x00, 0x00, 0x00, 0xc3
+    };
+    if (memcmp((void *)pthread_getspecific, asm_code, sizeof(asm_code)) != 0) {
+        return 1;
+    }
+    return 0;
+#else
+#error FAIL
+#endif
+                    ]])],
+                    dnl => Test succeeded
+                    [AC_DEFINE([USE_MACOS_PTHREAD_TLS_ASM], [1],
+                        [define as 1 if macOS assembly implementation supported])
+                    AC_MSG_RESULT([[yes (macOS assembly)]])
+                    ],
+                    dnl => Test failed
+                    [AC_MSG_RESULT([[yes (pthread-based)]])],
+                    dnl => Cross-compilation, test impossible
+                    [AC_MSG_RESULT([[yes (pthread-based)]])])
+            ;;
+            *)
+                dnl => Any other OS, --with-native-tls specified
+                AC_DEFINE([USE_NATIVE_TLS], [1], [define as 1 if using native TLS])
+                AC_MSG_RESULT([yes])
+            ;;
+        esac
+    ],
+    [
+        dnl => --without-native-tls
+        AC_MSG_RESULT([no])
+    ]
+)
+dnl
+dnl Test if pthread_getspecific() can be overridden as
+dnl __attribute__((pure)).
+dnl
+AC_MSG_CHECKING([[whether pthread_getspecific() can be made pure]])
+AC_COMPILE_IFELSE(
+    [AC_LANG_SOURCE([[
+#include <pthread.h>
+__attribute__((pure))
+void * pthread_getspecific(pthread_key_t key);
+]])], [
+    AC_MSG_RESULT(yes)
+    AC_DEFINE([ALLOW_PURE_PTHREAD_GETSPECIFIC], [1],
+        [define as 1 if pthread_getspecific() can be declared pure])
+], [
+    AC_MSG_RESULT(no)
+])
+
+dnl
 dnl User setting: Debug mode (off by default)
 dnl
 AC_ARG_ENABLE([debug],

@@ -103,9 +103,9 @@ void UnlockThreadControl(void)
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
 
-#ifdef PTHREAD_TLS
+#ifdef USE_PTHREAD_TLS
 static int init_tls_key = 0;
 static pthread_key_t TLSKey;
 
@@ -117,11 +117,11 @@ pthread_key_t GetTLSKey(void)
     }
     return TLSKey;
 }
-#endif /* PTHREAD_TLS */
+#endif /* USE_PTHREAD_TLS */
 
 void * AllocateTLS(void)
 {
-#ifndef PTHREAD_TLS
+#ifndef USE_PTHREAD_TLS
     void * addr;
     void * result;
     size_t pagesize = getpagesize();
@@ -148,7 +148,7 @@ void * AllocateTLS(void)
         pthread_setspecific(GetTLSKey(), result);
     }
     return result;
-#endif /* PTHREAD_TLS */
+#endif /* USE_PTHREAD_TLS */
 }
 
 void FreeTLS(void * address)
@@ -160,7 +160,7 @@ void FreeTLS(void * address)
 #endif
 }
 
-#endif /* HAVE_NATIVE_TLS */
+#endif /* USE_NATIVE_TLS */
 
 #ifndef DISABLE_GC
 void AddGCRoots(void)
@@ -180,7 +180,7 @@ static void RemoveGCRoots(void)
 }
 #endif /* DISABLE_GC */
 
-#if !defined(HAVE_NATIVE_TLS) && !defined(PTHREAD_TLS)
+#if !defined(USE_NATIVE_TLS) && !defined(USE_PTHREAD_TLS)
 
 /* In order to safely use thread-local memory on the main stack, we have
  * to work around an idiosyncracy in some virtual memory systems. These
@@ -235,7 +235,7 @@ void RunThreadedMain(int (*mainFunction)(int, char **),
                      int     argc,
                      char ** argv)
 {
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
 #ifdef STACK_GROWS_UP
 #error Upward growing stack not yet supported
 #else
@@ -378,7 +378,7 @@ static void * DispatchThread(void * arg)
 Obj RunThread(void (*start)(void *), void * arg)
 {
     ThreadData * result;
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
     void * tls;
 #endif
     pthread_attr_t thread_attr;
@@ -392,7 +392,7 @@ Obj RunThread(void (*start)(void *), void * arg)
     }
     result = thread_free_list;
     thread_free_list = thread_free_list->next;
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
     if (!result->tls)
         result->tls = AllocateTLS();
     tls = result->tls;
@@ -417,7 +417,7 @@ Obj RunThread(void (*start)(void *), void * arg)
     result->thread_object = NewThreadObject(result - thread_data);
     /* set up the thread attribute to support a custom stack in our TLS */
     pthread_attr_init(&thread_attr);
-#if !defined(HAVE_NATIVE_TLS) && !defined(PTHREAD_TLS)
+#if !defined(USE_NATIVE_TLS) && !defined(USE_PTHREAD_TLS)
     size_t         pagesize = getpagesize();
     pthread_attr_setstack(&thread_attr, (char *)tls + pagesize * 2,
                           TLS_SIZE - pagesize * 2);
@@ -434,7 +434,7 @@ Obj RunThread(void (*start)(void *), void * arg)
         thread_free_list = result;
         UnlockThreadControl();
         pthread_attr_destroy(&thread_attr);
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
         FreeTLS(tls);
 #endif
         return (Obj)0;
@@ -447,7 +447,7 @@ int JoinThread(int id)
 {
     pthread_t pthread_id;
     void (*start)(void *);
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
     void * tls;
 #endif
     if (id < 0 || id >= MAX_THREADS)
@@ -455,7 +455,7 @@ int JoinThread(int id)
     LockThreadControl(1);
     pthread_id = thread_data[id].pthread_id;
     start = thread_data[id].start;
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
     tls = thread_data[id].tls;
 #endif
     if (thread_data[id].joined || start == NULL) {
@@ -474,7 +474,7 @@ int JoinThread(int id)
     */
     thread_data[id].start = NULL;
     UnlockThreadControl();
-#ifndef HAVE_NATIVE_TLS
+#ifndef USE_NATIVE_TLS
     FreeTLS(tls);
 #endif
     return 1;

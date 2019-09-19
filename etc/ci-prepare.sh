@@ -47,7 +47,7 @@ if [[ $HPCGAP = yes ]]
 then
   git clone https://github.com/rbehrends/unward
   cd unward
-  ./configure
+  ./configure CC=gcc CXX=g++ CFLAGS=-O2 CXXFLAGS=-O2
   make
   cd ..
   unward/bin/unward --inplace src

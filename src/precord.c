@@ -43,8 +43,8 @@
 
 #ifdef HPCGAP
 #include "hpc/aobjects.h"
-#include "hpc/traverse.h"
 #include "hpc/guards.h"
+#include "hpc/traverse.h"
 #endif
 
 /****************************************************************************

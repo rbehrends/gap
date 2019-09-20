@@ -299,7 +299,6 @@ EXPORT_INLINE UInt SIZE_BAG_CONTENTS(const void *ptr) {
 **  calling 'CHANGED_BAG(old)' in the above example (see "CHANGED_BAG").
 */
 #ifdef HPCGAP
-#define PURE_FUNC __attribute__((pure))
 EXPORT_INLINE PURE_FUNC int ReadCheck(Bag bag)
 {
     Region *region;

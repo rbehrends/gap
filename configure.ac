@@ -113,6 +113,8 @@ AX_GCC_FUNC_ATTRIBUTE([always_inline])
 AX_GCC_FUNC_ATTRIBUTE([format])
 AX_GCC_FUNC_ATTRIBUTE([noinline])
 AX_GCC_FUNC_ATTRIBUTE([noreturn])
+AX_GCC_FUNC_ATTRIBUTE([constructor])
+AX_GCC_FUNC_ATTRIBUTE([pure])
 
 dnl compiler builtins
 AC_DEFUN([CHECK_COMPILER_BUILTIN],

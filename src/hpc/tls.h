@@ -68,7 +68,7 @@ extern __thread ThreadLocalStorage *TLSInstance;
 // it as such works for gcc/clang and allows the compiler to hoist calls
 // to pthread_getspecific() out of loops and perform constant
 // subexpression elimination on expressions containing TLS values.
-__attribute__((pure)) void * pthread_getspecific(pthread_key_t);
+PURE_FUNC void * pthread_getspecific(pthread_key_t);
 #endif
 
 static pthread_key_t TLSKeyCopy;
@@ -81,7 +81,7 @@ pthread_key_t GetTLSKey(void);
 // variable, avoiding one level of indirection.
 //
 // Constructor functions are executed upon program start/library load.
-__attribute__((constructor)) static void InitTLSKey()
+CONSTRUCTOR_FUNC static void InitTLSKey()
 {
     TLSKeyCopy = GetTLSKey();
 }

@@ -63,7 +63,7 @@ extern __thread ThreadLocalStorage *TLSInstance;
 
 #include <pthread.h>
 
-#ifdef __GNUC__
+#ifdef ALLOW_PURE_PTHREAD_GETSPECIFIC
 // pthread_getspecific() is not defined as pure by default; redeclaring
 // it as such works for gcc/clang and allows the compiler to hoist calls
 // to pthread_getspecific() out of loops and perform constant
@@ -71,8 +71,13 @@ extern __thread ThreadLocalStorage *TLSInstance;
 PURE_FUNC void * pthread_getspecific(pthread_key_t);
 #endif
 
+#ifdef USE_MACOS_PTHREAD_TLS_ASM
+static UInt TLSOffset;
+UInt GetTLSOffset(void);
+#else
 static pthread_key_t TLSKeyCopy;
 pthread_key_t GetTLSKey(void);
+#endif
 
 // This constructor function will initialize the static variable for
 // each C module. Making the variable static allows optimizations that
@@ -81,11 +86,18 @@ pthread_key_t GetTLSKey(void);
 // variable, avoiding one level of indirection.
 //
 // Constructor functions are executed upon program start/library load.
+#ifdef USE_MACOS_PTHREAD_TLS_ASM
+CONSTRUCTOR_FUNC static void InitTLSOffset()
+{
+    TLSOffset = GetTLSOffset();
+}
+#elif defined(HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR)
 CONSTRUCTOR_FUNC static void InitTLSKey()
 {
     TLSKeyCopy = GetTLSKey();
 }
 #endif
+#endif // USE_PTHREAD_TLS
 
 #if defined(__APPLE__) && defined(__x86_64__)
 #define PTHREAD_TLS_ASM
@@ -101,22 +113,22 @@ static ALWAYS_INLINE ThreadLocalStorage * GetTLS(void)
     return TLSInstance;
 #elif defined(USE_PTHREAD_TLS)
 #ifdef USE_MACOS_PTHREAD_TLS_ASM
-    long   key;
+    long   offset;
     void * p;
-    key = (long)TLSKeyCopy;
+    offset = (long)TLSOffset;
     // The following inline assembly code is the same as that in
     // pthread_getspecific(). That pthread_getspecific() is actually
     // implemented in that way has been verified in the configure
     // script and resulted in defining USE_MACOS_PTHREAD_TLS_ASM.
     // If that test fails, we fall back to the standard implementation
     // of pthread_getspecific().
-    asm("movq %%gs:(,%1,8), %0"
+    asm("movq %%gs:(%1), %0"
         : "=r"(p)  /* output = %0 */
-        : "r"(key) /* input = %1 */
+        : "r"(offset) /* input = %1 */
         : /* clobber = none */);
     return (ThreadLocalStorage *)p;
 #else
-#ifdef __GNUC__
+#ifdef HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
     return (ThreadLocalStorage *)pthread_getspecific(TLSKeyCopy);
 #else
     return (ThreadLocalStorage *)pthread_getspecific(GetTLSKey());

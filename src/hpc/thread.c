@@ -108,15 +108,83 @@ void UnlockThreadControl(void)
 #ifdef USE_PTHREAD_TLS
 static int init_tls_key = 0;
 static pthread_key_t TLSKey;
+#ifdef USE_MACOS_PTHREAD_TLS_ASM
+static int tls_offset;
+
+#define OFFS 0x100
+#define END (-1)
+
+int cmpOpCode(unsigned char *code, int *with) {
+    int result = 0;
+    while (*with >= 0) {
+        if (*with == OFFS) {
+            result = *code;
+        } else {
+            if (*code != *with)
+                return -1;
+        }
+        code++;
+        with++;
+    }
+    return result;
+}
+
+void FindTLSOffset() {
+    // This is an idea borrowed from Mono. We test if the implementation
+    // of pthread_getspecific() uses the assembly code below. If that is
+    // true, we can replace calls to pthread_getspecific() with the
+    // matching inline assembly, allowing a significant performance boost.
+    // There are two possible implementations.
+    static int asm_code[] = {
+        // movq %gs:[OFFS](,%rdi,8), %rax
+        // retq
+        0x65, 0x48, 0x8b, 0x04, 0xfd, OFFS, 0x00, 0x00, 0x00, 0xc3, END
+    };
+    static int asm_code2[] = {
+        // pushq  %rbp
+        // movq   %rsp, %rbp
+        // movq   %gs:[OFFS](,%rdi,8),%rax
+        // popq   %rbp
+        // retq
+        0x55, 0x48, 0x89, 0xe5, 0x65, 0x48, 0x8b, 0x04, 0xfd, OFFS,
+        0x00, 0x00, 0x00, 0x5d, 0xc3, END
+    };
+    tls_offset = cmpOpCode((unsigned char *)pthread_getspecific, asm_code);
+    if (tls_offset >= 0)
+        return;
+    tls_offset = cmpOpCode((unsigned char *)pthread_getspecific, asm_code2);
+    if (tls_offset >= 0)
+        return;
+    Panic("Unable to find macOS thread-local storage offset");
+}
+#endif
+
+static void CreateTLSKey(void)
+{
+    pthread_key_create(&TLSKey, NULL);
+#ifdef USE_MACOS_PTHREAD_TLS_ASM
+    FindTLSOffset();
+#endif
+    init_tls_key = 1;
+}
 
 pthread_key_t GetTLSKey(void)
 {
     if (!init_tls_key) {
-        pthread_key_create(&TLSKey, NULL);
-        init_tls_key = 1;
+        CreateTLSKey();
     }
     return TLSKey;
 }
+
+#ifdef USE_MACOS_PTHREAD_TLS_ASM
+UInt GetTLSOffset(void)
+{
+    if (!init_tls_key) {
+        CreateTLSKey();
+    }
+    return (UInt)TLSKey * sizeof(void *) + tls_offset;
+}
+#endif
 #endif /* USE_PTHREAD_TLS */
 
 void * AllocateTLS(void)

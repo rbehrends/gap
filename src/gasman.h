@@ -327,34 +327,42 @@ extern PURE_FUNC int HandleWriteGuardError(Bag);
 EXPORT_INLINE Bag *PTR_BAG(Bag bag)
 {
     GAP_ASSERT(bag != 0);
-#ifdef HPCGAP
+#ifdef USE_HPC_GUARDS
     if (!WriteCheck(bag))
       GuardDummy = HandleWriteGuardError(bag);
 #endif
     return *(Bag**)bag;
 }
 
+#ifdef USE_HPC_GUARDS
 EXPORT_INLINE Bag *UNSAFE_PTR_BAG(Bag bag)
 {
     GAP_ASSERT(bag != 0);
     return *(Bag**)bag;
 }
+#else
+#define UNSAFE_PTR_BAG PTR_BAG
+#endif
 
 EXPORT_INLINE const Bag *CONST_PTR_BAG(Bag bag)
 {
     GAP_ASSERT(bag != 0);
-#ifdef HPCGAP
+#ifdef USE_HPC_GUARDS
     if (!ReadCheck(bag))
       GuardDummy = HandleReadGuardError(bag);
 #endif
     return *(const Bag * const *)bag;
 }
 
+#ifdef USE_HPC_GUARDS
 EXPORT_INLINE const Bag *UNSAFE_CONST_PTR_BAG(Bag bag)
 {
     GAP_ASSERT(bag != 0);
     return *(const Bag * const *)bag;
 }
+#else
+#define UNSAFE_CONST_PTR_BAG CONST_PTR_BAG
+#endif
 
 EXPORT_INLINE void SET_PTR_BAG(Bag bag, Bag *val)
 {

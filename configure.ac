@@ -205,14 +205,31 @@ AS_CASE([$with_gc],
 AC_MSG_RESULT([$with_gc])
 
 dnl
-dnl User setting: native thread-local storage (off by default)
+dnl User setting: disable guards (race protection)
 dnl
 
-AC_ARG_WITH([native-tls],
-    [AS_HELP_STRING([--with-native-tls],
+AC_ARG_ENABLE([guards],
+    [AS_HELP_STRING([--disable-guards],
+        [disable race protection in HPC-GAP])],
+    [enable_guards=$enableval],
+    [enable_guards=yes])
+
+AS_IF([[test "x$enable_guards" == "xyes"]], [
+    AC_DEFINE([USE_HPC_GUARDS], [1], [define as 1 if guards should be checked])
+])
+AC_MSG_CHECKING([whether to use race protection in HPC-GAP])
+AC_MSG_RESULT([$enable_guards])
+
+dnl
+dnl User setting: native thread-local storage (off by default)
+dnl See src/hpc/tls.h for more details on thread-local storage options.
+dnl
+
+AC_ARG_ENABLE([native-tls],
+    [AS_HELP_STRING([--enable-native-tls],
         [use native thread-local storage implementation])],
-        [],
-        [with_native_tls=no])
+        [enable_native_tls=$enableval],
+        [enable_native_tls=no])
 AC_MSG_CHECKING([whether to use native tls])
 dnl
 dnl Distinguish between cases where we support __thread declarations
@@ -220,8 +237,8 @@ dnl and situations where we use a pthread_getspecific() implementation.
 dnl Right now, we only do the latter for 64-bit macOS.
 dnl
 enable_macos_tls_asm=default
-AS_IF([[test "x$with_native_tls" == "xyes"]], [
-        case "$host_cpu-$host_vendor-$host_os" in
+AS_IF([[test "x$enable_native_tls" == "xyes"]], [
+        case "$host" in
             x86_64-apple-darwin*)
                 AC_DEFINE([USE_PTHREAD_TLS], [1], [define as 1 if using pthread_getspecific])
                 dnl

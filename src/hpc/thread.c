@@ -1315,7 +1315,6 @@ extern GVarDescriptor GUARD_ERROR_STACK;
 
 static Int NumReadErrors = 0;
 static Int NumWriteErrors = 0;
-volatile int GuardDummy;
 
 #ifdef DEBUG_GUARDS
 
@@ -1350,15 +1349,15 @@ void SetGuardErrorStack(void)
 }
 #endif
 
-PURE_FUNC int HandleReadGuardError(Bag bag)
+void HandleReadGuardError(Bag bag)
 {
     NumReadErrors++;
     // We shift some of the rarer checks here to
     // avoid overloading ReadCheck().
     if (REGION(bag)->alt_owner == GetTLS())
-        return 0;
+        return;
     if (TLS(DisableGuards))
-        return 0;
+        return;
     SetGVar(&LastInaccessibleGVar, bag);
 #ifdef DEBUG_GUARDS
     SetGuardErrorStack();
@@ -1366,18 +1365,17 @@ PURE_FUNC int HandleReadGuardError(Bag bag)
     ErrorMayQuit(
         "Attempt to read object %i of type %s without having read access",
         (Int)bag, (Int)TNAM_OBJ(bag));
-    return 0;
 }
 
-PURE_FUNC int HandleWriteGuardError(Bag bag)
+void HandleWriteGuardError(Bag bag)
 {
     NumWriteErrors++;
     // We shift some of the rarer checks here to
     // avoid overloading ReadCheck().
     if (REGION(bag)->alt_owner == GetTLS())
-        return 0;
+        return;
     if (TLS(DisableGuards))
-        return 0;
+        return;
     SetGVar(&LastInaccessibleGVar, bag);
 #ifdef DEBUG_GUARDS
     SetGuardErrorStack();
@@ -1385,7 +1383,6 @@ PURE_FUNC int HandleWriteGuardError(Bag bag)
     ErrorMayQuit(
         "Attempt to write object %i of type %s without having write access",
         (Int)bag, (Int)TNAM_OBJ(bag));
-    return 0;
 }
 
 #endif

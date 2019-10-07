@@ -22,7 +22,7 @@
 static ALWAYS_INLINE Bag WriteGuard(Bag bag)
 {
     if (!WriteCheck(bag))
-        GuardDummy = HandleWriteGuardError(bag);
+        HandleWriteGuardError(bag);
     return bag;
 }
 
@@ -58,7 +58,7 @@ EXPORT_INLINE int CheckExclusiveWriteAccess(Bag bag)
 static ALWAYS_INLINE Bag ReadGuard(Bag bag)
 {
     if (!ReadCheck(bag))
-        GuardDummy = HandleReadGuardError(bag);
+        HandleReadGuardError(bag);
     return bag;
 }
 

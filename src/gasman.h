@@ -299,7 +299,7 @@ EXPORT_INLINE UInt SIZE_BAG_CONTENTS(const void *ptr) {
 **  calling 'CHANGED_BAG(old)' in the above example (see "CHANGED_BAG").
 */
 #ifdef HPCGAP
-EXPORT_INLINE PURE_FUNC int ReadCheck(Bag bag)
+EXPORT_INLINE int ReadCheck(Bag bag)
 {
     Region *region;
     region = REGION(bag);
@@ -312,16 +312,15 @@ EXPORT_INLINE PURE_FUNC int ReadCheck(Bag bag)
     return 0;
 }
 
-EXPORT_INLINE PURE_FUNC int WriteCheck(Bag bag)
+EXPORT_INLINE int WriteCheck(Bag bag)
 {
     Region *region;
     region = REGION(bag);
     return !region || region->owner == GetTLS();
 }
 
-extern volatile int GuardDummy;
-extern PURE_FUNC int HandleReadGuardError(Bag);
-extern PURE_FUNC int HandleWriteGuardError(Bag);
+extern void HandleReadGuardError(Bag);
+extern void HandleWriteGuardError(Bag);
 #endif // HPCGAP
 
 EXPORT_INLINE Bag *PTR_BAG(Bag bag)
@@ -329,7 +328,7 @@ EXPORT_INLINE Bag *PTR_BAG(Bag bag)
     GAP_ASSERT(bag != 0);
 #ifdef USE_HPC_GUARDS
     if (!WriteCheck(bag))
-      GuardDummy = HandleWriteGuardError(bag);
+      HandleWriteGuardError(bag);
 #endif
     return *(Bag**)bag;
 }
@@ -349,7 +348,7 @@ EXPORT_INLINE const Bag *CONST_PTR_BAG(Bag bag)
     GAP_ASSERT(bag != 0);
 #ifdef USE_HPC_GUARDS
     if (!ReadCheck(bag))
-      GuardDummy = HandleReadGuardError(bag);
+      HandleReadGuardError(bag);
 #endif
     return *(const Bag * const *)bag;
 }

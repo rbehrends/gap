@@ -17,6 +17,49 @@
 #error This header is only meant to be used with HPC-GAP
 #endif
 
+// This contains our implementation of thread-local storage (TLS). TLS
+// is a feature that is only to varying degrees supported by compilers
+// and operating systems. As it is critical for the performance of
+// HPC-GAP, we allow the implementation to choose between various
+// options.
+//
+// By default, we use a low-level stack-based approach. Each thread
+// stack is allocated on a memory segment whose boundaries are a
+// multiple of a fixed power of 2 (see tlsconfig.h). The pages with
+// the lowest address in that memory range are reserved for TLS,
+// the rest for the stack itself. This allows us to get the base
+// address for TLS by taking the stack or frame pointer (or any address
+// on the stack) and masking out the lowest bits. This is very fast
+// and on many platforms actually faster than global variables.
+//
+// However, this option only works when GAP is run as an application,
+// as it needs to control the creation of threads in order to force
+// thread stacks on the required boundaries. When used as a library,
+// we need a native implementation. These can be chosen by passing
+// the --enable-native-tls option to the configure script.
+//
+// By default, native TLS support will default to declaring TLS as
+// storage type __thread. This is simple, but inefficient on some
+// platforms. In particular, Cygwin and macOS require a function call
+// to a dynamically loaded library to access __thread storage, which
+// furthermore inhibits compiler optimizations.
+//
+// For these platforms, we use a different approach. As a basic
+// alternative, on platforms that support it, we use
+// pthread_getspecific() to get the base address of TLS and we
+// define pthread_getspecific() as a pure function. This is still
+// not faster than __thread by itsefl, but declaring
+// pthread_getspecific() as pure allows compiler optimizations such
+// as common subexpression elimination and code hoisting.
+//
+// As a further improvement, on macOS (and in the future, on Cygwin),
+// we use an assembly-based alternative implementation of
+// pthread_getspecific(). This assembly code can be treated like
+// a normal variable access. In order to check that this is safe,
+// we verify both during configuration and at runtime that the
+// assembly code for pthread_getspecific() is implemented in a way
+// consistent with such code.
+
 #include "hpc/tlsconfig.h"
 
 typedef struct Region Region;

@@ -234,7 +234,8 @@ AC_MSG_CHECKING([whether to use native tls])
 dnl
 dnl Distinguish between cases where we support __thread declarations
 dnl and situations where we use a pthread_getspecific() implementation.
-dnl Right now, we only do the latter for 64-bit macOS.
+dnl Right now, we only do the latter for 64-bit macOS. See src/hpc/tls.h
+dnl for details.
 dnl
 enable_macos_tls_asm=default
 AS_IF([[test "x$enable_native_tls" == "xyes"]], [

@@ -21,8 +21,10 @@
 
 static ALWAYS_INLINE Bag WriteGuard(Bag bag)
 {
+#ifdef USE_HPC_GUARDS
     if (!WriteCheck(bag))
         HandleWriteGuardError(bag);
+#endif
     return bag;
 }
 
@@ -34,6 +36,7 @@ EXPORT_INLINE Bag ImpliedWriteGuard(Bag bag)
 
 EXPORT_INLINE int CheckWriteAccess(Bag bag)
 {
+#ifdef USE_HPC_GUARDS
     Region * region;
     if (!IS_BAG_REF(bag))
         return 1;
@@ -41,10 +44,14 @@ EXPORT_INLINE int CheckWriteAccess(Bag bag)
     return !(region && region->owner != GetTLS() &&
              region->alt_owner != GetTLS()) ||
            TLS(DisableGuards) >= 2;
+#else
+    return 1;
+#endif
 }
 
 EXPORT_INLINE int CheckExclusiveWriteAccess(Bag bag)
 {
+#ifdef USE_HPC_GUARDS
     Region * region;
     if (!IS_BAG_REF(bag))
         return 1;
@@ -53,12 +60,17 @@ EXPORT_INLINE int CheckExclusiveWriteAccess(Bag bag)
         return 0;
     return region->owner == GetTLS() || region->alt_owner == GetTLS() ||
            TLS(DisableGuards) >= 2;
+#else
+    return 1;
+#endif
 }
 
 static ALWAYS_INLINE Bag ReadGuard(Bag bag)
 {
+#ifdef USE_HPC_GUARDS
     if (!ReadCheck(bag))
         HandleReadGuardError(bag);
+#endif
     return bag;
 }
 
@@ -69,6 +81,7 @@ static ALWAYS_INLINE Bag ImpliedReadGuard(Bag bag)
 
 static ALWAYS_INLINE int CheckReadAccess(Bag bag)
 {
+#ifdef USE_HPC_GUARDS
     Region * region;
     if (!IS_BAG_REF(bag))
         return 1;
@@ -77,6 +90,9 @@ static ALWAYS_INLINE int CheckReadAccess(Bag bag)
              !region->readers[TLS(threadID)] &&
              region->alt_owner != GetTLS()) ||
            TLS(DisableGuards) >= 2;
+#else
+    return 1;
+#endif
 }
 
 #endif    // GAP_HPC_GUARD_H

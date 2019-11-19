@@ -96,7 +96,7 @@ typedef struct Barrier {
     Obj  monitor;
     UInt count;
     UInt phase;
-    int  waiting;
+    int  arrived, departed;
 } Barrier;
 
 typedef struct SyncVar {
@@ -1583,14 +1583,12 @@ static void UnlockBarrier(Barrier * barrier)
 
 static void JoinBarrier(Barrier * barrier)
 {
-    barrier->waiting++;
     WaitForMonitor(ObjPtr(barrier->monitor));
-    barrier->waiting--;
 }
 
 static void SignalBarrier(Barrier * barrier)
 {
-    if (barrier->waiting)
+    if (barrier->arrived > barrier->departed)
         SignalMonitor(ObjPtr(barrier->monitor));
 }
 
@@ -1603,7 +1601,8 @@ static Obj CreateBarrier(void)
     barrier->monitor = NewMonitor();
     barrier->count = 0;
     barrier->phase = 0;
-    barrier->waiting = 0;
+    barrier->arrived = 0;
+    barrier->departed = 0;
     return barrierBag;
 }
 
@@ -1612,6 +1611,8 @@ static void StartBarrier(Barrier * barrier, UInt count)
     LockBarrier(barrier);
     barrier->count = count;
     barrier->phase++;
+    barrier->arrived = 0;
+    barrier->departed = 0;
     UnlockBarrier(barrier);
 }
 
@@ -1620,10 +1621,14 @@ static void WaitBarrier(Barrier * barrier)
     UInt phaseDelta;
     LockBarrier(barrier);
     phaseDelta = barrier->phase;
-    if (--barrier->count > 0)
+    barrier->arrived++;
+    if (barrier->arrived < barrier->count)
         JoinBarrier(barrier);
-    SignalBarrier(barrier);
     phaseDelta -= barrier->phase;
+    if (phaseDelta == 0) {
+        barrier->departed++;
+        SignalBarrier(barrier);
+    }
     UnlockBarrier(barrier);
     if (phaseDelta != 0)
         ArgumentError("WaitBarrier: Barrier was reset");
@@ -1817,16 +1822,16 @@ static void PrintChannel(Obj obj)
 static void PrintBarrier(Obj obj)
 {
     Barrier * barrier = ObjPtr(obj);
-    Int       count, waiting;
+    Int       count, arrived;
     char      buffer[20];
     Pr("<barrier ", 0L, 0L);
     sprintf(buffer, "%p: ", (void *)barrier);
     Pr(buffer, 0L, 0L);
     LockBarrier(barrier);
     count = barrier->count;
-    waiting = barrier->waiting;
+    arrived = barrier->arrived;
     UnlockBarrier(barrier);
-    Pr("%d of %d threads arrived>", waiting, count);
+    Pr("%d of %d threads arrived>", arrived, count);
 }
 
 static void PrintSyncVar(Obj obj)

@@ -63,10 +63,12 @@ GAP_STATIC_ASSERT(sizeof(void *) == SIZEOF_VOID_P, "sizeof(void *) is wrong");
 #endif
 #endif
 
-// If we are not running HPC-GAP, disable read and write guards.
+// If we are not running HPC-GAP, guards should be disabled
 
 #ifndef HPCGAP
-#undef USE_HPC_GUARDS
+#ifdef USE_HPC_GUARDS
+#error Do not use --enable-guards without --enable-hpcgap.
+#endif
 #endif
 
 /****************************************************************************

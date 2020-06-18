@@ -199,6 +199,7 @@ static jl_datatype_t * datatype_largebag;
 static UInt            StackAlignBags;
 static Bag *           GapStackBottom;
 static jl_ptls_t       JuliaTLS, SaveTLS;
+static jl_task_t *     RootTaskOfMainThread;
 static size_t          max_pool_obj_size;
 static UInt            YoungRef;
 static int             FullGC;
@@ -369,6 +370,36 @@ void MarkJuliaObj(void * obj)
 // from which freed objects are then marked. Hence, we add additional checks
 // when traversing GAP master pointer and bag objects that this happens
 // only for live objects.
+//
+// All stacks in Julia are associated with tasks and we can use
+// jl_task_stack_buffer() to retrieve the buffer information for that stack.
+// That said, in a couple of cases these need adjustments.
+//
+// 1. The stack buffer of the root task of the main thread, when started from
+//    GAP can extend past the point where Julia believes it ends. Therefore,
+//    for that stack, we use GapBottomStack instead.
+// 2. If it is the current task of the current thread, we know where exactly
+//    the lowest valid address of the stack is and do not need to scan the
+//    entire stack buffer.
+//
+// In addition, stack buffers can include guard pages, which trigger a
+// segmentation fault when accessed. We intercept such segmentation faults
+// and terminate stack scanning early for those.
+//
+// In GAP terminology, we use "bottom" to describe the end of the stack
+// where it starts and "top" to describe the current stack pointer. This
+// means that the "bottom" of the stack is the highest address on most
+// modern architectures and "top" is the lowest. When we treat the stack
+// as an abstract buffer, "start" and "end" refer to its lowest and
+// highest address, respectively.
+//
+//   +------------------------------------------------+
+//   | guard |  unused area            | active stack |
+//   | pages |                         | frames       |
+//   +------------------------------------------------+
+//   ^                                 ^              ^
+//   |                                 |              |
+// start                              top         bottom/end
 
 static void TryMark(void * p)
 {
@@ -473,7 +504,7 @@ static void SafeScanTaskStack(PtrArray * stack, void * start, void * end)
         // longjmps to JuliaTLS->safe_restore; we use this
         // mechamism to abort stack scanning when a protected
         // page is hit. For this to work, we must scan the stack
-        // from top to bottom, so we see any guard pages last.
+        // from bottom to top, so we see any guard pages last.
         JuliaTLS->safe_restore = &exc_buf;
         FindLiveRangeReverse(stack, start, end);
     }
@@ -574,21 +605,22 @@ static void GapRootScanner(int full)
     //    main thread (which has thread id 0).
     //
     // The reason is that if Julia is being initialized from GAP, it
-    // cannot always reliably find the top of the stack for that task,
+    // cannot always reliably find the bottom of the stack for that task,
     // so we have to fall back to GAP for that.
-    if (!IsUsingLibGap() && jl_threadid() == 0 &&
-        JuliaTLS->root_task == task) {
+    if (task == RootTaskOfMainThread) {
         stackend = (char *)GapStackBottom;
     }
 
-    // allow installing a custom marking function. This is used for
+    // Allow installing a custom marking function. This is used for
     // integrating GAP (possibly linked as a shared library) with other code
     // bases which use their own form of garbage collection. For example,
     // with Python (for SageMath).
     if (ExtraMarkFuncBags)
         (*ExtraMarkFuncBags)();
 
-    // scan the stack for further object references, and mark them
+    // We scan the stack of the current task from the stack pointer
+    // towards the stack bottom, ensuring that we also scan any
+    // references stored in registers.
     syJmp_buf registers;
     sySetjmp(registers);
     TryMarkRange(registers, (char *)registers + sizeof(syJmp_buf));
@@ -635,7 +667,16 @@ static void GapTaskScanner(jl_task_t * task, int root_task)
             stack = stack + size - task->copy_stack;
             size = task->copy_stack;
         }
-        ScanTaskStack(rescan, task, stack, stack + size);
+        char * stackend = stack + size;
+        if (task == RootTaskOfMainThread) {
+            stackend = (char *)GapStackBottom;
+        }
+        // Unlike the stack of the current task that we can in
+        // GapRootScanner, we do not know the stack pointer. We
+        // therefore use a separate routine that scans from the
+        // stack bottom until we reach the other end of the stack
+        // or a guard page.
+        ScanTaskStack(rescan, task, stack, stackend);
     }
 }
 
@@ -747,6 +788,21 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
     jl_gc_enable_conservative_gc_support();
     jl_init();
 
+    JuliaTLS = jl_get_ptls_states();
+    // These callbacks potentially require access to the Julia
+    // TLS and thus need to be installed after initialization.
+    jl_gc_set_cb_root_scanner(GapRootScanner, 1);
+    jl_gc_set_cb_task_scanner(GapTaskScanner, 1);
+    jl_gc_set_cb_pre_gc(PreGCHook, 1);
+    jl_gc_set_cb_post_gc(PostGCHook, 1);
+    // jl_gc_enable(0); /// DEBUGGING
+
+    // If we are embedding Julia in GAP, remember the root task
+    // of the main thread. The extent of the stack buffer of that
+    // task is calculated a bit differently than for other tasks.
+    if (!IsUsingLibGap())
+        RootTaskOfMainThread = jl_get_current_task();
+
     Module = jl_new_module(jl_symbol("ForeignGAP"));
     Module->parent = jl_main_module;
 
@@ -782,14 +838,6 @@ void InitBags(UInt initial_size, Bag * stack_bottom, UInt stack_align)
         gapobj_type = jl_any_type;
     }
 
-    JuliaTLS = jl_get_ptls_states();
-    // These callbacks potentially require access to the Julia
-    // TLS and thus need to be installed after initialization.
-    jl_gc_set_cb_root_scanner(GapRootScanner, 1);
-    jl_gc_set_cb_task_scanner(GapTaskScanner, 1);
-    jl_gc_set_cb_pre_gc(PreGCHook, 1);
-    jl_gc_set_cb_post_gc(PostGCHook, 1);
-    // jl_gc_enable(0); /// DEBUGGING
 
 
     jl_set_const(jl_main_module, jl_symbol("ForeignGAP"),
